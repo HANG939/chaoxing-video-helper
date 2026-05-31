@@ -20,7 +20,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Floating control panel with persistent settings.
 - OCS-style console panel with live run state, task status, speed slider, pause/resume, immediate jump, completion check, and runtime logs.
 - The console can be dragged by its header; the position is saved.
-- Minimize the console into a draggable circular Codex launcher. Click the launcher to restore the console near that icon.
+- Close the console into a draggable circular Codex launcher. Click the launcher to restore the console near that icon.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.
 - Supports Tampermonkey and ScriptCat.
 
@@ -54,7 +54,6 @@ The script shows an OCS-style console panel in the lower-right corner:
 - `重试次数`: how many times to re-check the page after a video ends.
 - `立即跳转`: test the current page's next-task navigation immediately.
 - `检测完成`: inspect whether the current page has explicit task-completion evidence.
-- `−`: minimize the console into the circular Codex launcher.
 - `×`: hide the console into the circular Codex launcher, so it can be restored if it was closed by accident.
 - Runtime logs: show recent speed changes, completion checks, navigation attempts, and all-done notices.
 
@@ -74,6 +73,12 @@ The userscript uses explicit Chaoxing/Xueyin match rules instead of a broad `@ma
 
 If your userscript manager says the script was not executed, enable the browser extension's user-script permission first. In Chromium-based browsers this is often called `Allow User Scripts` or `允许用户脚本`.
 
+## Disclaimer
+
+Read [DISCLAIMER.md](DISCLAIMER.md) before using or redistributing this project.
+
+Chaoxing Video Helper is provided for personal playback convenience and open-source study. It is not affiliated with Chaoxing, Xueyin Online, any school, or any course provider. Users are responsible for complying with their school's rules, course requirements, platform terms, and local laws.
+
 ## Project Boundaries
 
 This project is only a playback convenience tool. It does not:
@@ -86,7 +91,7 @@ This project is only a playback convenience tool. It does not:
 - access private account data outside the current page
 - automate paid services
 
-Use it responsibly and follow your school's course rules.
+Use it responsibly. Do not use this project to misrepresent learning activity, bypass assessments, or violate academic integrity rules.
 
 ## Development
 

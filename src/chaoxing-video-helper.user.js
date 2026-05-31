@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.4
+// @version      0.2.5
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -159,6 +159,7 @@
       tryTeacherAjaxNativeTask,
       tryNativeNextStep,
       scoreTaskElement,
+      getCurrentChapterId,
     };
   }
 
@@ -426,6 +427,10 @@
       showToast(message, "info");
       logEvent(message, "info");
       const result = goNextLesson({ skipNativeOnce: true });
+      if (result.done) {
+        setPanelMessage(result.message || "全部视频任务点已完成。");
+        return;
+      }
       if (!result.clicked) {
         setPanelMessage(result.message || "未找到下一个视频任务点。");
         showToast(result.message || "未找到下一个视频任务点。", "warn");
@@ -442,9 +447,9 @@
     lastCompletionJumpAt = now;
 
     if (state.allCompleted) {
-      const message = "全部任务点已完成。";
+      const message = "全部视频任务点已完成。";
       runtime.state = "已完成";
-      runtime.task = "全部任务点已完成";
+      runtime.task = "全部视频任务点已完成";
       setPanelMessage(message);
       notify("学习通视频助手", message);
       showToast(message, "success");
@@ -473,7 +478,7 @@
         completed: true,
         allCompleted,
         key: `chapter:${activeChapter.chapterId || activeChapter.text}`,
-        message: allCompleted ? "全部任务点已完成。" : "当前章节任务点已完成，即将跳转。",
+        message: allCompleted ? "全部视频任务点已完成。" : "当前章节任务点已完成，即将跳转。",
       };
     }
 
@@ -484,7 +489,7 @@
         completed: true,
         allCompleted,
         key: `active:${getElementText(activeElement)}`,
-        message: allCompleted ? "全部任务点已完成。" : "当前任务点已完成，即将跳转。",
+        message: allCompleted ? "全部视频任务点已完成。" : "当前任务点已完成，即将跳转。",
       };
     }
 
@@ -495,7 +500,7 @@
         completed: true,
         allCompleted,
         key: `media:${mediaState.ids.join(",")}`,
-        message: allCompleted ? "全部任务点已完成。" : "音视频任务点已完成，即将跳转。",
+        message: allCompleted ? "全部视频任务点已完成。" : "音视频任务点已完成，即将跳转。",
       };
     }
 
@@ -598,6 +603,11 @@
         setPanelMessage(result.message || "已进入下一节。");
         return;
       }
+      if (result.done) {
+        navigationInProgress = false;
+        setPanelMessage(result.message || "全部视频任务点已完成。");
+        return;
+      }
       if (attempt >= maxAttempts) {
         navigationInProgress = false;
         setPanelMessage(`未找到下一任务点，已尝试 ${attempt} 次。`);
@@ -625,6 +635,14 @@
         clickElement(skipAwareTask.clickTarget || skipAwareTask.element);
         return announceNavigation({ clicked: true, message: "已跳过章节测验，进入下一个视频任务点。" });
       }
+      if (skipAwareTask && skipAwareTask.noSelectableAfterUnsafe) {
+        return announceNavigation({
+          clicked: false,
+          done: true,
+          message: "全部视频任务点已完成。",
+          notifyDone: true,
+        });
+      }
 
       if (!options.skipNativeOnce) {
         const nativeNext = tryNativeNextStep();
@@ -634,6 +652,14 @@
       }
 
       const teacherAjaxTask = findNextTeacherAjaxTask();
+      if (teacherAjaxTask && teacherAjaxTask.noSelectableAfterUnsafe) {
+        return announceNavigation({
+          clicked: false,
+          done: true,
+          message: "全部视频任务点已完成。",
+          notifyDone: true,
+        });
+      }
       if (teacherAjaxTask) {
         const nativeTeacherAjax = tryTeacherAjaxNativeTask(teacherAjaxTask);
         if (nativeTeacherAjax.clicked) {
@@ -695,6 +721,13 @@
       notify("学习通视频助手", message);
       showToast(message, "success");
       logEvent(message, "success");
+    } else if (result && result.notifyDone) {
+      const message = result.message || "全部视频任务点已完成。";
+      runtime.state = "已完成";
+      runtime.task = "全部视频任务点已完成";
+      notify("学习通视频助手", message);
+      showToast(message, "success");
+      logEvent(message, "success");
     }
     return result;
   }
@@ -708,7 +741,7 @@
         continue;
       }
 
-      const currentIndex = items.findIndex((item) => item.current);
+      const currentIndex = findCurrentTaskIndex(items);
       if (currentIndex >= 0 && currentIndex + 1 < items.length) {
         const afterCurrent = items.slice(currentIndex + 1);
         const nextSelectableIndex = afterCurrent.findIndex(isSelectableTaskItem);
@@ -717,6 +750,13 @@
           next.skippedUnsafeBefore = items[currentIndex].unsafe || afterCurrent.slice(0, nextSelectableIndex).some((item) => item.unsafe);
           return next;
         }
+        if (items[currentIndex].unsafe || afterCurrent.some((item) => item.unsafe)) {
+          return { clicked: false, noSelectableAfterUnsafe: true };
+        }
+      }
+
+      if (currentIndex >= 0) {
+        continue;
       }
 
       const firstUnfinished = items.find((item) => isSelectableTaskItem(item) && item.unfinishCount > 0 && !item.current);
@@ -734,7 +774,7 @@
     const infos = [];
 
     for (const link of links) {
-      const container = link.parentElement || closestTaskContainer(link);
+      const container = closestTaskContainer(link) || link.parentElement || link;
       if (!container || seen.has(container)) {
         continue;
       }
@@ -744,17 +784,25 @@
       const meta = getElementMeta(container);
       const haystack = `${text} ${meta}`;
       const unfinishCount = readUnfinishCount(container);
+      const teacherAjaxArgs = parseTeacherAjaxArgs(link.getAttribute("onclick") || "");
+      const chapterId = teacherAjaxArgs[2] || "";
+      const currentChapterId = getCurrentChapterId(doc);
+      const hasUnfinishedMarker = UNFINISHED_TASK_RE.test(haystack);
+      const finished = unfinishCount === 0 || (!hasUnfinishedMarker && FINISHED_TASK_RE.test(haystack)) || Boolean(container.querySelector(".icon_Completed"));
+      const unfinished = unfinishCount > 0 || (hasUnfinishedMarker && !finished);
       infos.push({
         element: container,
         clickTarget: findTaskClickTarget(container) || link,
-        current: CURRENT_TASK_RE.test(meta),
+        current: CURRENT_TASK_RE.test(meta) || (chapterId && currentChapterId && chapterId === currentChapterId),
         hasUnfinishCount: Number.isFinite(unfinishCount),
         unfinishCount: Number.isFinite(unfinishCount) ? unfinishCount : 0,
+        finished,
+        unfinished,
         locked: LOCKED_TASK_RE.test(haystack),
         unsafe: isSkippableTaskText(haystack),
         looksVideo: VIDEO_TASK_RE.test(haystack),
-        chapterId: parseTeacherAjaxChapterId(link.getAttribute("onclick") || ""),
-        teacherAjaxArgs: parseTeacherAjaxArgs(link.getAttribute("onclick") || ""),
+        chapterId,
+        teacherAjaxArgs,
         text,
       });
     }
@@ -762,8 +810,34 @@
     return infos;
   }
 
+  function findCurrentTaskIndex(items) {
+    const direct = items.findIndex((item) => item.current);
+    if (direct >= 0) {
+      return direct;
+    }
+    const currentChapterId = getCurrentChapterId(document);
+    if (!currentChapterId) {
+      return -1;
+    }
+    return items.findIndex((item) => item.chapterId && item.chapterId === currentChapterId);
+  }
+
+  function getCurrentChapterId(doc = document) {
+    const input = doc.querySelector && doc.querySelector("#curChapterId");
+    const inputValue = input ? String(input.value || input.getAttribute("value") || "") : "";
+    if (inputValue) {
+      return inputValue;
+    }
+    try {
+      const url = new URL(location.href);
+      return url.searchParams.get("chapterId") || url.searchParams.get("chapterid") || "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
   function isSelectableTaskItem(item) {
-    return Boolean(item && !item.locked && !item.unsafe && (item.unfinishCount > 0 || item.looksVideo || !item.hasUnfinishCount));
+    return Boolean(item && !item.locked && !item.unsafe && !item.finished && (item.unfinished || item.looksVideo || !item.hasUnfinishCount));
   }
 
   function parseTeacherAjaxChapterId(onclick) {
@@ -1135,7 +1209,6 @@
         </div>
         <div class="${APP_ID}-head-actions">
           <span class="${APP_ID}-pill" data-role="run-state">${runtime.state}</span>
-          <button type="button" data-action="minimize" title="最小化为圆形图标">−</button>
           <button type="button" data-action="hide" title="隐藏面板">×</button>
         </div>
       </div>
@@ -1243,14 +1316,7 @@
       return;
     }
     if (target.dataset.action === "hide") {
-      settings.showPanel = false;
-      settings.panelMinimized = true;
-      saveSettings(settings);
-      renderPanel();
-      return;
-    }
-    if (target.dataset.action === "minimize") {
-      minimizePanelToLauncher();
+      hidePanelToLauncher();
       return;
     }
     if (target.dataset.action === "toggle-enabled") {
@@ -1354,7 +1420,7 @@
     panelDrag = null;
   }
 
-  function minimizePanelToLauncher() {
+  function hidePanelToLauncher() {
     let left = settings.launcherLeft;
     let top = settings.launcherTop;
     if (panel) {

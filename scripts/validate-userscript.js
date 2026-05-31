@@ -242,7 +242,7 @@ const sandbox = {
   console,
   document,
   location: {
-    href: "https://mooc1.chaoxing.com/mycourse/studentstudy",
+    href: "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=chapter-1",
     hostname: "mooc1.chaoxing.com",
   },
   localStorage: {
@@ -262,6 +262,7 @@ const sandbox = {
   String,
   RegExp,
   JSON,
+  URL,
   setInterval: (fn) => {
     timers.push(fn);
     return timers.length;
@@ -459,6 +460,50 @@ if (!skipQuizNavigation.clicked || !videoAfterLink.clicked || quizLink.clicked |
     nativeNextArgs: sandbox.nativeNextArgs,
   })}`);
 }
+
+currentTask.className = "posCatalog_select";
+nextTask.className = "posCatalog_select";
+quizTask.className = "posCatalog_select";
+videoAfterQuiz.className = "posCatalog_select";
+sandbox.location.href = "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=chapter-quiz";
+curChapterId.value = "chapter-quiz";
+sandbox.nativeNextArgs = null;
+nextLink.clicked = false;
+quizLink.clicked = false;
+videoAfterLink.clicked = false;
+const urlCurrentSkipTarget = sandbox.window.__CXVH_TEST__.findNextTeacherAjaxTask();
+if (!urlCurrentSkipTarget || urlCurrentSkipTarget.chapterId !== "chapter-video-3" || !urlCurrentSkipTarget.skippedUnsafeBefore) {
+  throw new Error(`Expected URL chapterId current detection to skip quiz and choose the following video, got ${JSON.stringify(urlCurrentSkipTarget && {
+    chapterId: urlCurrentSkipTarget.chapterId,
+    skippedUnsafeBefore: urlCurrentSkipTarget.skippedUnsafeBefore,
+    text: urlCurrentSkipTarget.text,
+  })}`);
+}
+const urlCurrentSkipNavigation = sandbox.window.__CXVH_TEST__.goNextLesson();
+if (!urlCurrentSkipNavigation.clicked || !videoAfterLink.clicked || nextLink.clicked || quizLink.clicked || sandbox.nativeNextArgs) {
+  throw new Error(`Expected URL-current quiz skip to avoid earlier videos and native next, got ${JSON.stringify({
+    urlCurrentSkipNavigation,
+    earlierVideoClicked: nextLink.clicked === true,
+    quizClicked: quizLink.clicked === true,
+    videoAfterClicked: videoAfterLink.clicked === true,
+    nativeNextArgs: sandbox.nativeNextArgs,
+  })}`);
+}
+
+videoAfterInput.value = "0";
+videoAfterLink.clicked = false;
+sandbox.nativeNextArgs = null;
+const doneAfterQuiz = sandbox.window.__CXVH_TEST__.goNextLesson();
+if (!doneAfterQuiz.done || doneAfterQuiz.clicked || videoAfterLink.clicked || sandbox.nativeNextArgs) {
+  throw new Error(`Expected all video task points done after quiz when no later unfinished video exists, got ${JSON.stringify({
+    doneAfterQuiz,
+    videoAfterClicked: videoAfterLink.clicked === true,
+    nativeNextArgs: sandbox.nativeNextArgs,
+  })}`);
+}
+videoAfterInput.value = "1";
+sandbox.location.href = "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=chapter-1";
+curChapterId.value = "chapter-1";
 
 currentTask.className = "posCatalog_select posCatalog_active";
 nextTask.className = "posCatalog_select";

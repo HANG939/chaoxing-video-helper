@@ -1,11 +1,18 @@
 # Changelog
 
+## 0.2.5
+
+- Fixed chapter-quiz skipping so the helper only continues forward after the skipped quiz instead of falling back to earlier videos.
+- Added a "all video task points completed" notification when no later video task point is available.
+- Removed the separate minimize dash button; closing the console now restores it as the circular Codex launcher.
+- Added a standalone disclaimer document and linked it from the README.
+
 ## 0.2.4
 
 - Added quiz-task skipping so chapter tests are ignored and the helper continues to the next video/task point.
 - Moved in-page toast notifications to the top of the window to avoid covering course content.
 - Added a circular draggable Codex launcher that restores the console after hiding or minimizing it.
-- Added smooth minimize/expand behavior that opens the console near the launcher position.
+- Added smooth close/expand behavior that opens the console near the launcher position.
 
 ## 0.2.3
 
