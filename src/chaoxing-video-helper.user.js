@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.0
+// @version      0.2.1
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -87,12 +87,21 @@
   let lastCompletionKey = "";
   let lastCompletionJumpAt = 0;
   let observer = null;
+  const runtime = {
+    state: "待机",
+    media: "未检测到视频",
+    task: "等待任务点",
+    lastMessage: "等待视频...",
+    logs: [],
+  };
 
   if (!shouldActivate()) {
     return;
   }
 
   debug("activated", location.href, { top: isTopWindow() });
+  runtime.state = settings.enabled ? "运行中" : "已暂停";
+  logEvent("脚本已启动，正在检测学习通任务点", "info");
 
   if (typeof GM_registerMenuCommand === "function") {
     GM_registerMenuCommand("Toggle Chaoxing Video Helper panel", () => {
@@ -212,6 +221,7 @@
     }
     const video = findBestVideo();
     if (!video) {
+      runtime.media = "未检测到视频";
       return;
     }
     if (lastVideo !== video) {
@@ -223,6 +233,7 @@
     if (settings.autoPlay) {
       startVideo(video);
     }
+    updateRuntimeMedia(video);
   }
 
   function findBestVideo() {
@@ -336,6 +347,16 @@
     });
   }
 
+  function updateRuntimeMedia(video) {
+    if (!video) {
+      runtime.media = "未检测到视频";
+      return;
+    }
+    const current = formatTime(video.currentTime || 0);
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? formatTime(video.duration) : "--:--";
+    runtime.media = `${video.paused ? "暂停" : "播放"} ${current}/${duration} · ${Number(video.playbackRate || settings.speed).toFixed(2)}x`;
+  }
+
   function reportVideoStatus() {
     if (!isTopWindow() && Date.now() - statusTimer < 1400) {
       return;
@@ -370,6 +391,8 @@
     }
 
     const state = getTaskCompletionState();
+    runtime.task = state.hasEvidence ? (state.key || "已识别任务点") : "等待任务点";
+    updatePanelRuntime();
     if (!state.hasEvidence || !state.completed) {
       return;
     }
@@ -381,16 +404,22 @@
 
     if (state.allCompleted) {
       const message = "全部任务点已完成。";
+      runtime.state = "已完成";
+      runtime.task = "全部任务点已完成";
       setPanelMessage(message);
       notify("学习通视频助手", message);
       showToast(message, "success");
+      logEvent(message, "success");
       return;
     }
 
     const message = state.message || "页面任务点已完成，即将跳转。";
+    runtime.state = "跳转中";
+    runtime.task = state.key || "任务点完成";
     setPanelMessage(message);
     notify("学习通视频助手", message);
     showToast(message, "success");
+    logEvent(message, "success");
     handleVideoEnded({ reason: "task-completed", title: document.title, url: location.href });
   }
 
@@ -583,8 +612,11 @@
   function announceNavigation(result) {
     if (result && result.clicked) {
       const message = result.message || "已尝试跳转到下一个任务点。";
+      runtime.state = "跳转中";
+      runtime.task = message;
       notify("学习通视频助手", message);
       showToast(message, "success");
+      logEvent(message, "success");
     }
     return result;
   }
@@ -989,41 +1021,64 @@
     }
     panel.innerHTML = `
       <div class="${APP_ID}-head">
-        <strong>学习通视频助手</strong>
-        <button type="button" data-action="hide" title="隐藏面板">×</button>
+        <div>
+          <strong>Chaoxing Helper</strong>
+          <small>OCS-style console</small>
+        </div>
+        <div class="${APP_ID}-head-actions">
+          <span class="${APP_ID}-pill" data-role="run-state">${runtime.state}</span>
+          <button type="button" data-action="hide" title="隐藏面板">×</button>
+        </div>
       </div>
-      <label><input type="checkbox" data-setting="enabled" ${settings.enabled ? "checked" : ""}> 启用</label>
-      <label><input type="checkbox" data-setting="autoPlay" ${settings.autoPlay ? "checked" : ""}> 自动播放</label>
-      <label><input type="checkbox" data-setting="autoNext" ${settings.autoNext ? "checked" : ""}> 视频结束后下一节</label>
-      <label><input type="checkbox" data-setting="completionCheck" ${settings.completionCheck ? "checked" : ""}> 检测任务点完成</label>
-      <label class="${APP_ID}-speed">倍速
-        <input type="number" data-setting="speed" min="0.5" max="4" step="0.1" value="${settings.speed}">
-      </label>
-      <label class="${APP_ID}-speed">跳转延迟
-        <input type="number" data-setting="nextDelaySeconds" min="0" max="30" step="1" value="${settings.nextDelaySeconds}">
-        <span>秒</span>
-      </label>
-      <label class="${APP_ID}-speed">跳转模式
-        <select data-setting="navigationMode">
-          <option value="smart" ${settings.navigationMode === "smart" ? "selected" : ""}>智能</option>
-          <option value="task-only" ${settings.navigationMode === "task-only" ? "selected" : ""}>任务点</option>
-          <option value="button-only" ${settings.navigationMode === "button-only" ? "selected" : ""}>按钮</option>
-        </select>
-      </label>
-      <label class="${APP_ID}-speed">重试次数
-        <input type="number" data-setting="maxNextRetries" min="1" max="20" step="1" value="${settings.maxNextRetries}">
-      </label>
+      <div class="${APP_ID}-section">
+        <div class="${APP_ID}-metric"><span>媒体</span><b data-role="media-state">${runtime.media}</b></div>
+        <div class="${APP_ID}-metric"><span>任务</span><b data-role="task-state">${runtime.task}</b></div>
+        <div class="${APP_ID}-metric"><span>消息</span><b data-role="last-message">${runtime.lastMessage}</b></div>
+      </div>
+      <div class="${APP_ID}-section ${APP_ID}-toggles">
+        <label><input type="checkbox" data-setting="enabled" ${settings.enabled ? "checked" : ""}> 启用</label>
+        <label><input type="checkbox" data-setting="autoPlay" ${settings.autoPlay ? "checked" : ""}> 自动播放</label>
+        <label><input type="checkbox" data-setting="autoNext" ${settings.autoNext ? "checked" : ""}> 自动下一节</label>
+        <label><input type="checkbox" data-setting="completionCheck" ${settings.completionCheck ? "checked" : ""}> 完成检测</label>
+      </div>
+      <div class="${APP_ID}-section">
+        <label class="${APP_ID}-speed">倍速
+          <input type="range" data-setting="speed" min="0.5" max="4" step="0.1" value="${settings.speed}">
+          <input type="number" data-setting="speed" min="0.5" max="4" step="0.1" value="${settings.speed}">
+        </label>
+        <label class="${APP_ID}-speed">跳转延迟
+          <input type="number" data-setting="nextDelaySeconds" min="0" max="30" step="1" value="${settings.nextDelaySeconds}">
+          <span>秒</span>
+        </label>
+        <label class="${APP_ID}-speed">跳转模式
+          <select data-setting="navigationMode">
+            <option value="smart" ${settings.navigationMode === "smart" ? "selected" : ""}>智能</option>
+            <option value="task-only" ${settings.navigationMode === "task-only" ? "selected" : ""}>任务点</option>
+            <option value="button-only" ${settings.navigationMode === "button-only" ? "selected" : ""}>按钮</option>
+          </select>
+        </label>
+        <label class="${APP_ID}-speed">重试次数
+          <input type="number" data-setting="maxNextRetries" min="1" max="20" step="1" value="${settings.maxNextRetries}">
+        </label>
+      </div>
       <div class="${APP_ID}-buttons">
         <button type="button" data-speed="1">1x</button>
         <button type="button" data-speed="1.25">1.25x</button>
         <button type="button" data-speed="1.5">1.5x</button>
         <button type="button" data-speed="2">2x</button>
       </div>
-      <button type="button" class="${APP_ID}-manual-next" data-action="next-now">立即跳转</button>
+      <div class="${APP_ID}-actions">
+        <button type="button" data-action="toggle-enabled">${settings.enabled ? "暂停" : "继续"}</button>
+        <button type="button" data-action="next-now">立即跳转</button>
+        <button type="button" data-action="check-now">检测完成</button>
+      </div>
       <div class="${APP_ID}-status" data-role="status">等待视频...</div>
+      <div class="${APP_ID}-logs" data-role="logs">${renderLogHtml()}</div>
     `;
     panel.onchange = onPanelChange;
+    panel.oninput = onPanelChange;
     panel.onclick = onPanelClick;
+    updatePanelRuntime();
   }
 
   function onPanelChange(event) {
@@ -1046,6 +1101,10 @@
     saveSettings(settings);
     broadcastSettings();
     applySettingsToVideo();
+    if (key === "speed") {
+      logEvent(`倍速已设置为 ${settings.speed}x`, "info");
+    }
+    updatePanelRuntime();
   }
 
   function onPanelClick(event) {
@@ -1059,6 +1118,15 @@
       renderPanel();
       return;
     }
+    if (target.dataset.action === "toggle-enabled") {
+      settings.enabled = !settings.enabled;
+      saveSettings(settings);
+      runtime.state = settings.enabled ? "运行中" : "已暂停";
+      logEvent(settings.enabled ? "脚本已继续运行" : "脚本已暂停", settings.enabled ? "info" : "warn");
+      broadcastSettings();
+      renderPanel();
+      return;
+    }
     if (target.dataset.action === "next-now") {
       const result = goNextLesson();
       setPanelMessage(result.message || (result.clicked ? "已尝试跳转。" : "未找到下一任务点。"));
@@ -1068,9 +1136,19 @@
       }
       return;
     }
+    if (target.dataset.action === "check-now") {
+      const state = getTaskCompletionState();
+      const message = state.completed ? state.message || "检测到任务点已完成" : "当前没有明确的完成证据";
+      runtime.task = state.key || runtime.task;
+      setPanelMessage(message);
+      showToast(message, state.completed ? "success" : "warn");
+      logEvent(message, state.completed ? "success" : "warn");
+      return;
+    }
     if (target.dataset.speed) {
       settings.speed = clampSpeed(target.dataset.speed);
       saveSettings(settings);
+      logEvent(`倍速已切换为 ${settings.speed}x`, "info");
       broadcastSettings();
       renderPanel();
       applySettingsToVideo();
@@ -1081,16 +1159,17 @@
     if (!panel) {
       return;
     }
+    runtime.media = `${data.paused ? "暂停" : "播放中"} ${formatTime(data.currentTime)}/${data.duration ? formatTime(data.duration) : "--:--"} · ${Number(data.speed || settings.speed).toFixed(2)}x`;
     const status = panel.querySelector("[data-role='status']");
     if (!status) {
       return;
     }
-    const current = formatTime(data.currentTime);
-    const duration = data.duration ? formatTime(data.duration) : "--:--";
-    status.textContent = `${data.paused ? "暂停" : "播放中"} ${current}/${duration} · ${Number(data.speed || settings.speed).toFixed(2)}x`;
+    status.textContent = runtime.media;
+    updatePanelRuntime();
   }
 
   function setPanelMessage(message) {
+    runtime.lastMessage = message;
     if (!panel) {
       return;
     }
@@ -1098,6 +1177,48 @@
     if (status) {
       status.textContent = message;
     }
+    updatePanelRuntime();
+  }
+
+  function updatePanelRuntime() {
+    if (!panel) {
+      return;
+    }
+    const values = {
+      "run-state": runtime.state,
+      "media-state": runtime.media,
+      "task-state": runtime.task,
+      "last-message": runtime.lastMessage,
+      logs: renderLogHtml(),
+    };
+    for (const [role, value] of Object.entries(values)) {
+      const node = panel.querySelector(`[data-role='${role}']`);
+      if (!node) {
+        continue;
+      }
+      if (role === "logs") {
+        node.innerHTML = value;
+      } else {
+        node.textContent = value;
+      }
+    }
+  }
+
+  function logEvent(message, type = "info") {
+    const time = new Date().toLocaleTimeString();
+    runtime.logs.unshift({ time, message, type });
+    runtime.logs = runtime.logs.slice(0, 8);
+    runtime.lastMessage = message;
+    updatePanelRuntime();
+  }
+
+  function renderLogHtml() {
+    if (!runtime.logs.length) {
+      return `<div class="${APP_ID}-log empty">暂无运行日志</div>`;
+    }
+    return runtime.logs
+      .map((item) => `<div class="${APP_ID}-log ${APP_ID}-log-${item.type}"><span>${escapeHtml(item.time)}</span>${escapeHtml(item.message)}</div>`)
+      .join("");
   }
 
   function addPanelStyle() {
@@ -1107,14 +1228,15 @@
         right: 18px;
         bottom: 18px;
         z-index: 2147483647;
-        width: 248px;
+        width: 320px;
         box-sizing: border-box;
-        padding: 12px;
-        border: 1px solid rgba(35, 45, 66, 0.18);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.96);
-        color: #1f2937;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+        padding: 0;
+        border: 1px solid rgba(37, 99, 235, 0.24);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.98);
+        color: #0f172a;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
+        overflow: hidden;
         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       #${APP_ID}-panel * { box-sizing: border-box; }
@@ -1122,27 +1244,68 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 8px;
+        padding: 10px 12px;
+        background: #1d4ed8;
+        color: #fff;
+      }
+      #${APP_ID}-panel .${APP_ID}-head strong { display: block; font-size: 15px; }
+      #${APP_ID}-panel .${APP_ID}-head small { display: block; opacity: .78; font-size: 11px; }
+      #${APP_ID}-panel .${APP_ID}-head-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #${APP_ID}-panel .${APP_ID}-pill {
+        min-width: 48px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.18);
+        text-align: center;
+        font-size: 12px;
       }
       #${APP_ID}-panel .${APP_ID}-head button {
         width: 24px;
         height: 24px;
         border: 0;
         border-radius: 4px;
-        background: #f3f4f6;
+        background: rgba(255,255,255,.18);
+        color: #fff;
         cursor: pointer;
       }
+      #${APP_ID}-panel .${APP_ID}-section {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      #${APP_ID}-panel .${APP_ID}-metric {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 8px;
+        align-items: start;
+        margin: 4px 0;
+        font-size: 12px;
+      }
+      #${APP_ID}-panel .${APP_ID}-metric span { color: #64748b; }
+      #${APP_ID}-panel .${APP_ID}-metric b { font-weight: 600; color: #0f172a; overflow-wrap: anywhere; }
       #${APP_ID}-panel label {
         display: flex;
         align-items: center;
         gap: 8px;
-        margin: 8px 0;
+        margin: 6px 0;
+      }
+      #${APP_ID}-panel .${APP_ID}-toggles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 8px;
       }
       #${APP_ID}-panel input[type="number"] {
         width: 76px;
         padding: 4px 6px;
         border: 1px solid #cbd5e1;
         border-radius: 4px;
+      }
+      #${APP_ID}-panel input[type="range"] {
+        flex: 1;
+        min-width: 90px;
       }
       #${APP_ID}-panel select {
         width: 92px;
@@ -1158,7 +1321,7 @@
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 6px;
-        margin-top: 8px;
+        padding: 10px 12px 0;
       }
       #${APP_ID}-panel .${APP_ID}-buttons button {
         padding: 5px 0;
@@ -1167,9 +1330,13 @@
         background: #f8fafc;
         cursor: pointer;
       }
-      #${APP_ID}-panel .${APP_ID}-manual-next {
-        width: 100%;
-        margin-top: 8px;
+      #${APP_ID}-panel .${APP_ID}-actions {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        padding: 8px 12px 0;
+      }
+      #${APP_ID}-panel .${APP_ID}-actions button {
         padding: 6px 0;
         border: 1px solid #2563eb;
         border-radius: 4px;
@@ -1179,9 +1346,30 @@
       }
       #${APP_ID}-panel .${APP_ID}-status {
         min-height: 20px;
-        margin-top: 10px;
+        padding: 8px 12px;
         color: #64748b;
         font-size: 12px;
+      }
+      #${APP_ID}-panel .${APP_ID}-logs {
+        max-height: 126px;
+        overflow: auto;
+        padding: 0 12px 12px;
+      }
+      #${APP_ID}-panel .${APP_ID}-log {
+        display: grid;
+        grid-template-columns: 66px 1fr;
+        gap: 6px;
+        padding: 5px 0;
+        border-top: 1px dashed #e2e8f0;
+        color: #334155;
+        font-size: 12px;
+      }
+      #${APP_ID}-panel .${APP_ID}-log span { color: #94a3b8; }
+      #${APP_ID}-panel .${APP_ID}-log-success { color: #1d4ed8; }
+      #${APP_ID}-panel .${APP_ID}-log-warn { color: #b45309; }
+      #${APP_ID}-panel .${APP_ID}-log.empty {
+        display: block;
+        color: #94a3b8;
       }
     `;
     if (typeof GM_addStyle === "function") {
@@ -1212,6 +1400,7 @@
       localStorage.setItem(STORE_KEY, text);
     }
     settings = normalized;
+    runtime.state = settings.enabled ? "运行中" : "已暂停";
   }
 
   function normalizeSettings(value) {
@@ -1289,6 +1478,15 @@
       .slice(0, 20)
       .map((item) => `${item.id || ""} ${item.className || ""} ${item.getAttribute("title") || ""} ${item.getAttribute("onclick") || ""} ${item.value || item.getAttribute("value") || ""}`);
     return own.concat(childMeta).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function safeQueryAll(root, selector) {

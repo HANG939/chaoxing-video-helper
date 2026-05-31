@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Rebuilt the floating panel into an OCS-style control console with live state, task status, speed slider, run controls, and logs.
+- Added manual pause/resume and immediate completion-check controls.
+- Added live runtime logging for speed changes, completion checks, and navigation attempts.
+
 ## 0.2.0
 
 - Reworked auto-next around OCS-style task completion monitoring instead of relying only on video `ended` events.

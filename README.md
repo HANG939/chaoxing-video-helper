@@ -17,6 +17,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Jump notifications: when the script attempts to move to the next task point, it shows a browser notification and an in-page toast.
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
+- OCS-style console panel with live run state, task status, speed slider, pause/resume, immediate jump, completion check, and runtime logs.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.
 - Supports Tampermonkey and ScriptCat.
 
@@ -38,7 +39,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 
 ## Usage
 
-The script shows a small panel in the lower-right corner:
+The script shows an OCS-style console panel in the lower-right corner:
 
 - `启用`: turn the helper on or off.
 - `自动播放`: try to start the current video automatically.
@@ -49,6 +50,8 @@ The script shows a small panel in the lower-right corner:
 - `跳转模式`: use `智能` by default. `任务点` only uses the chapter/task list, and `按钮` only clicks visible next buttons.
 - `重试次数`: how many times to re-check the page after a video ends.
 - `立即跳转`: test the current page's next-task navigation immediately.
+- `检测完成`: inspect whether the current page has explicit task-completion evidence.
+- Runtime logs: show recent speed changes, completion checks, navigation attempts, and all-done notices.
 
 Settings are saved by your userscript manager.
 
