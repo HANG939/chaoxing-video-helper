@@ -1,0 +1,18 @@
+{
+  "name": "chaoxing-video-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tampermonkey/ScriptCat userscript for Chaoxing video playback assistance.",
+  "scripts": {
+    "test": "node scripts/validate-userscript.js"
+  },
+  "keywords": [
+    "chaoxing",
+    "tampermonkey",
+    "scriptcat",
+    "userscript",
+    "video"
+  ],
+  "license": "MIT",
+  "devDependencies": {}
+}
