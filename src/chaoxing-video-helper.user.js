@@ -397,8 +397,15 @@
 
   function tryNativeNextStep() {
     const pageWindow = getPageWindow();
-    const pageDocument = pageWindow && pageWindow.document ? pageWindow.document : document;
-    const pCount = pageWindow && pageWindow.PCount;
+    let pageDocument = document;
+    let pCount = null;
+    try {
+      pageDocument = pageWindow && pageWindow.document ? pageWindow.document : document;
+      pCount = pageWindow && pageWindow.PCount;
+    } catch (error) {
+      debug("native page access failed", error);
+      return { clicked: false };
+    }
     if (!pCount || typeof pCount.next !== "function") {
       return { clicked: false };
     }

@@ -26,6 +26,10 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 
    [Install Chaoxing Video Helper](https://raw.githubusercontent.com/HANG939/chaoxing-video-helper/main/src/chaoxing-video-helper.user.js)
 
+   If GitHub's raw CDN still shows an older version right after a release, use this direct GitHub raw URL:
+
+   [Install from GitHub raw](https://github.com/HANG939/chaoxing-video-helper/raw/refs/heads/main/src/chaoxing-video-helper.user.js)
+
 3. Confirm installation in your userscript manager.
 4. Open a Chaoxing or Xueyin Online course video page.
 
