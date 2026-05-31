@@ -270,6 +270,15 @@ if (!sandbox.window.__CXVH_TEST__) {
   throw new Error("Expected test helpers to be exposed in test mode");
 }
 
+const teacherAjaxTarget = sandbox.window.__CXVH_TEST__.findNextTeacherAjaxTask();
+if (!teacherAjaxTarget || teacherAjaxTarget.chapterId !== "chapter-2") {
+  throw new Error(`Expected getTeacherAjax chapter scanner to find chapter-2, got ${JSON.stringify(teacherAjaxTarget && {
+    chapterId: teacherAjaxTarget.chapterId,
+    text: teacherAjaxTarget.text,
+    unfinishCount: teacherAjaxTarget.unfinishCount,
+  })}`);
+}
+
 const navigation = sandbox.window.__CXVH_TEST__.goNextLesson();
 if (!navigation.clicked || !nextLink.clicked) {
   const candidates = sandbox.window.__CXVH_TEST__.collectTaskCandidates(document);
@@ -321,6 +330,10 @@ sandbox.window.PCount = {
     sandbox.nativeNextArgs = args;
   },
 };
+const directNextButton = new FakeElement("button");
+directNextButton.textContent = "下一节";
+directNextButton.ownerDocument = document;
+documentElement.appendChild(directNextButton);
 
 const nativeNavigation = sandbox.window.__CXVH_TEST__.tryNativeNextStep();
 if (!nativeNavigation.clicked || !sandbox.nativeNextArgs) {
@@ -330,6 +343,19 @@ if (!nativeNavigation.clicked || !sandbox.nativeNextArgs) {
 const expectedNativeArgs = ["1", "chapter-100", "course-100", "clazz-100", ""];
 if (JSON.stringify(sandbox.nativeNextArgs) !== JSON.stringify(expectedNativeArgs)) {
   throw new Error(`Unexpected PCount.next arguments: ${JSON.stringify(sandbox.nativeNextArgs)}`);
+}
+
+nextLink.clicked = false;
+directNextButton.clicked = false;
+sandbox.nativeNextArgs = null;
+const prioritizedNavigation = sandbox.window.__CXVH_TEST__.goNextLesson();
+if (!prioritizedNavigation.clicked || !sandbox.nativeNextArgs || nextLink.clicked || directNextButton.clicked) {
+  throw new Error(`Expected smart navigation to prefer native PCount.next before DOM clicks, got ${JSON.stringify({
+    prioritizedNavigation,
+    nativeNextArgs: sandbox.nativeNextArgs,
+    nextLinkClicked: nextLink.clicked === true,
+    directNextClicked: directNextButton.clicked === true,
+  })}`);
 }
 
 console.log("Userscript metadata, syntax, startup, task navigation, and native Chaoxing navigation smoke tests look good.");

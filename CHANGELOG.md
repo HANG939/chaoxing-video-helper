@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- Changed smart navigation priority to use Chaoxing native next-step handling before DOM button clicks.
+- Added an OCS-style `getTeacherAjax` chapter scanner that uses unfinished task counts before generic DOM scanning.
+- Expanded smoke tests for chapter scanning and navigation priority.
+
 ## 0.1.3
 
 - Hardened native Chaoxing page access so cross-frame restrictions fall back safely.

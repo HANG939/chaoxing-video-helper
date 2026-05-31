@@ -11,7 +11,8 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Auto play the current course video when the page is ready.
 - Auto move to the next lesson after the current video ends.
 - Smart task-point navigation: when a normal "next" button is not available, the script scans the Chaoxing chapter list and prefers the next unfinished task point.
-- Native Chaoxing navigation: when the course page exposes its built-in next-step API, the script uses that path before falling back to DOM clicks.
+- Native Chaoxing navigation: when the course page exposes its built-in next-step API, the script uses that path before falling back to chapter-list or DOM clicks.
+- OCS-style chapter scanning: reads `getTeacherAjax` chapter entries and unfinished task counts before using generic page scanning.
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.

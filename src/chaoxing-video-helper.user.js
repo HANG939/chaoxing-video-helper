@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.1.3
+// @version      0.1.4
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -107,6 +107,7 @@
   if (TEST_MODE) {
     window.__CXVH_TEST__ = {
       collectTaskCandidates,
+      findNextTeacherAjaxTask,
       findNextTaskPoint,
       findNextElement,
       goNextLesson,
@@ -347,6 +348,19 @@
   }
 
   function goNextLesson() {
+    if (settings.navigationMode !== "button-only") {
+      const nativeNext = tryNativeNextStep();
+      if (nativeNext.clicked) {
+        return nativeNext;
+      }
+
+      const teacherAjaxTask = findNextTeacherAjaxTask();
+      if (teacherAjaxTask) {
+        clickElement(teacherAjaxTask.clickTarget || teacherAjaxTask.element);
+        return { clicked: true, message: "已按章节未完成数跳转到下一个任务点。" };
+      }
+    }
+
     if (settings.navigationMode !== "task-only") {
       const direct = findNextElement(document);
       if (direct) {
@@ -356,11 +370,6 @@
     }
 
     if (settings.navigationMode !== "button-only") {
-      const nativeNext = tryNativeNextStep();
-      if (nativeNext.clicked) {
-        return nativeNext;
-      }
-
       const nextTask = findNextTaskPoint();
       if (nextTask) {
         clickElement(nextTask.clickTarget || nextTask.element);
@@ -393,6 +402,65 @@
       }
     }
     return { clicked: false, message: "未找到下一任务点。" };
+  }
+
+  function findNextTeacherAjaxTask() {
+    const roots = getSearchRoots();
+    for (const root of roots) {
+      const items = getTeacherAjaxChapterInfos(root)
+        .filter((item) => item.clickTarget && !item.locked && !item.unsafe && (item.unfinishCount > 0 || item.current));
+      if (!items.length) {
+        continue;
+      }
+
+      const currentIndex = items.findIndex((item) => item.current);
+      if (currentIndex >= 0 && currentIndex + 1 < items.length) {
+        return items[currentIndex + 1];
+      }
+
+      const firstUnfinished = items.find((item) => item.unfinishCount > 0 && !item.current);
+      if (firstUnfinished) {
+        return firstUnfinished;
+      }
+    }
+    return null;
+  }
+
+  function getTeacherAjaxChapterInfos(root) {
+    const doc = root.nodeType === 9 ? root : root.ownerDocument || document;
+    const links = safeQueryAll(doc, "[onclick^='getTeacherAjax'],[onclick*='getTeacherAjax']");
+    const seen = new Set();
+    const infos = [];
+
+    for (const link of links) {
+      const container = link.parentElement || closestTaskContainer(link);
+      if (!container || seen.has(container)) {
+        continue;
+      }
+      seen.add(container);
+
+      const text = getElementText(container);
+      const meta = getElementMeta(container);
+      const haystack = `${text} ${meta}`;
+      const unfinishCount = readUnfinishCount(container);
+      infos.push({
+        element: container,
+        clickTarget: findTaskClickTarget(container) || link,
+        current: CURRENT_TASK_RE.test(meta),
+        unfinishCount: Number.isFinite(unfinishCount) ? unfinishCount : 0,
+        locked: LOCKED_TASK_RE.test(haystack),
+        unsafe: SAFE_SKIP_TASK_RE.test(text),
+        chapterId: parseTeacherAjaxChapterId(link.getAttribute("onclick") || ""),
+        text,
+      });
+    }
+
+    return infos;
+  }
+
+  function parseTeacherAjaxChapterId(onclick) {
+    const match = String(onclick || "").match(/getTeacherAjax\s*\(\s*['"][^'"]*['"]\s*,\s*['"][^'"]*['"]\s*,\s*['"]([^'"]+)['"]/);
+    return match ? match[1] : "";
   }
 
   function tryNativeNextStep() {
