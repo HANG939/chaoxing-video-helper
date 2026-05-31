@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a playback or compatibility problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the page, browser, userscript manager, and behavior.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and userscript manager
+      placeholder: "Chrome 126 + Tampermonkey 5.x"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open ...\n2. Set speed ...\n3. Video ends ..."
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: Paste relevant console errors if available. Do not include account cookies or private course data.

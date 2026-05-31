@@ -1,5 +1,6 @@
 # Chaoxing Video Helper
 
+[![CI](https://github.com/HANG939/chaoxing-video-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/HANG939/chaoxing-video-helper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps with normal video playback on Chaoxing and Xueyin Online course pages.
