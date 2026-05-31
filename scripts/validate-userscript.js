@@ -303,4 +303,33 @@ if (!navigation.clicked || !nextLink.clicked) {
   );
 }
 
-console.log("Userscript metadata, syntax, startup, and task navigation smoke tests look good.");
+const curCourseId = new FakeElement("input");
+curCourseId.id = "curCourseId";
+curCourseId.value = "course-100";
+const curChapterId = new FakeElement("input");
+curChapterId.id = "curChapterId";
+curChapterId.value = "chapter-100";
+const curClazzId = new FakeElement("input");
+curClazzId.id = "curClazzId";
+curClazzId.value = "clazz-100";
+for (const element of [curCourseId, curChapterId, curClazzId]) {
+  element.ownerDocument = document;
+  documentElement.appendChild(element);
+}
+sandbox.window.PCount = {
+  next: (...args) => {
+    sandbox.nativeNextArgs = args;
+  },
+};
+
+const nativeNavigation = sandbox.window.__CXVH_TEST__.tryNativeNextStep();
+if (!nativeNavigation.clicked || !sandbox.nativeNextArgs) {
+  throw new Error("Expected native PCount.next navigation to run when Chaoxing page APIs are present");
+}
+
+const expectedNativeArgs = ["1", "chapter-100", "course-100", "clazz-100", ""];
+if (JSON.stringify(sandbox.nativeNextArgs) !== JSON.stringify(expectedNativeArgs)) {
+  throw new Error(`Unexpected PCount.next arguments: ${JSON.stringify(sandbox.nativeNextArgs)}`);
+}
+
+console.log("Userscript metadata, syntax, startup, task navigation, and native Chaoxing navigation smoke tests look good.");

@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.1.1
+// @version      0.1.2
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -14,6 +14,7 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_notification
+// @grant        unsafeWindow
 // @homepageURL  https://github.com/HANG939/chaoxing-video-helper
 // @supportURL   https://github.com/HANG939/chaoxing-video-helper/issues
 // @updateURL    https://raw.githubusercontent.com/HANG939/chaoxing-video-helper/main/src/chaoxing-video-helper.user.js
@@ -109,6 +110,7 @@
       findNextTaskPoint,
       findNextElement,
       goNextLesson,
+      tryNativeNextStep,
       scoreTaskElement,
     };
   }
@@ -354,6 +356,11 @@
     }
 
     if (settings.navigationMode !== "button-only") {
+      const nativeNext = tryNativeNextStep();
+      if (nativeNext.clicked) {
+        return nativeNext;
+      }
+
       const nextTask = findNextTaskPoint();
       if (nextTask) {
         clickElement(nextTask.clickTarget || nextTask.element);
@@ -386,6 +393,45 @@
       }
     }
     return { clicked: false, message: "未找到下一任务点。" };
+  }
+
+  function tryNativeNextStep() {
+    const pageWindow = getPageWindow();
+    const pageDocument = pageWindow && pageWindow.document ? pageWindow.document : document;
+    const pCount = pageWindow && pageWindow.PCount;
+    if (!pCount || typeof pCount.next !== "function") {
+      return { clicked: false };
+    }
+
+    const curCourseId = pageDocument.querySelector("#curCourseId");
+    const curChapterId = pageDocument.querySelector("#curChapterId");
+    const curClazzId = pageDocument.querySelector("#curClazzId");
+    if (!curCourseId || !curChapterId || !curClazzId) {
+      return { clicked: false };
+    }
+
+    const chapterId = String(curChapterId.value || curChapterId.getAttribute("value") || "");
+    const courseId = String(curCourseId.value || curCourseId.getAttribute("value") || "");
+    const clazzId = String(curClazzId.value || curClazzId.getAttribute("value") || "");
+    if (!chapterId || !courseId || !clazzId) {
+      return { clicked: false };
+    }
+
+    const tabs = safeQueryAll(pageDocument, "#prev_tab .prev_ul li, .prev_ul li");
+    const tabCount = String(Math.max(1, tabs.length));
+    const activeChapter = pageDocument.querySelector(".posCatalog_active");
+    if (activeChapter && activeChapter.scrollIntoView) {
+      activeChapter.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+
+    try {
+      pageWindow._preChapterId = chapterId;
+      pCount.next(tabCount, chapterId, courseId, clazzId, "");
+      return { clicked: true, message: "已调用学习通原生下一任务点跳转。" };
+    } catch (error) {
+      debug("native PCount.next failed", error);
+      return { clicked: false };
+    }
   }
 
   function findNextElement(root) {
@@ -899,6 +945,17 @@
     } catch (_error) {
       window.postMessage(message, "*");
     }
+  }
+
+  function getPageWindow() {
+    try {
+      if (typeof unsafeWindow !== "undefined" && unsafeWindow) {
+        return unsafeWindow.top || unsafeWindow;
+      }
+    } catch (_error) {
+      return window;
+    }
+    return window;
   }
 
   function getElementText(element) {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Added a Chaoxing native navigation path using the page's own `PCount.next(...)` API when available.
+- Added smoke-test coverage for native Chaoxing next-step navigation arguments.
+
 ## 0.1.1
 
 - Added smart Chaoxing task-point navigation when a visible next button is missing.

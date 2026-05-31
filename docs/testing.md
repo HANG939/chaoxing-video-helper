@@ -34,6 +34,7 @@ Use this checklist before a release.
 - Set `跳转模式` to `智能`.
 - Test a page where the standard next button is not visible.
 - Confirm the script scrolls to the course chapter list and opens the next unfinished task point.
+- On the newer Chaoxing course-player page, confirm it can advance by the page's own next-step behavior after the video ends.
 - Confirm the script waits and retries if the page needs a few seconds to refresh task completion state.
 - If no next lesson is available, confirm the panel shows a clear message.
 
