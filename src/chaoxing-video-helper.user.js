@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.1.6
+// @version      0.2.0
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -40,6 +40,7 @@
     navigationMode: "smart",
     maxNextRetries: 8,
     retryIntervalSeconds: 2,
+    completionCheck: true,
     showPanel: true,
     debug: false,
   };
@@ -82,6 +83,9 @@
   let endedAt = 0;
   let statusTimer = 0;
   let navigationInProgress = false;
+  let completionMonitorStartedAt = 0;
+  let lastCompletionKey = "";
+  let lastCompletionJumpAt = 0;
   let observer = null;
 
   if (!shouldActivate()) {
@@ -118,6 +122,7 @@
       findNextTeacherAjaxTask,
       findNextTaskPoint,
       findNextElement,
+      getTaskCompletionState,
       goNextLesson,
       tryTeacherAjaxNativeTask,
       tryNativeNextStep,
@@ -198,6 +203,7 @@
         clickVisiblePlayButton();
       }
     }, 2500);
+    window.setInterval(monitorTaskCompletion, 2000);
   }
 
   function applySettingsToVideo() {
@@ -213,6 +219,7 @@
       lastVideo = video;
     }
     setVideoSpeed(video, settings.speed);
+    setPagePlayerSpeed(settings.speed);
     if (settings.autoPlay) {
       startVideo(video);
     }
@@ -271,6 +278,32 @@
     }
   }
 
+  function setPagePlayerSpeed(speed) {
+    const pageWindow = getPageWindow();
+    const value = clampSpeed(speed);
+    try {
+      const videojs = pageWindow && pageWindow.videojs;
+      if (typeof videojs === "function") {
+        const players = ["video", "audio", "video_html5_api", "audio_html5_api"]
+          .map((id) => {
+            try {
+              return videojs(id);
+            } catch (_error) {
+              return null;
+            }
+          })
+          .filter(Boolean);
+        for (const player of players) {
+          if (typeof player.playbackRate === "function") {
+            player.playbackRate(value);
+          }
+        }
+      }
+    } catch (error) {
+      debug("failed to set page player speed", error);
+    }
+  }
+
   function startVideo(video) {
     if (!video.paused || video.ended) {
       return;
@@ -321,6 +354,132 @@
       currentTime: video.currentTime || 0,
       duration: Number.isFinite(video.duration) ? video.duration : 0,
     });
+  }
+
+  function monitorTaskCompletion() {
+    if (!settings.enabled || !settings.autoNext || !settings.completionCheck || navigationInProgress) {
+      return;
+    }
+    const now = Date.now();
+    if (!completionMonitorStartedAt) {
+      completionMonitorStartedAt = now;
+      return;
+    }
+    if (now - completionMonitorStartedAt < 5000 || now - lastCompletionJumpAt < 8000) {
+      return;
+    }
+
+    const state = getTaskCompletionState();
+    if (!state.hasEvidence || !state.completed) {
+      return;
+    }
+    if (state.key && state.key === lastCompletionKey) {
+      return;
+    }
+    lastCompletionKey = state.key;
+    lastCompletionJumpAt = now;
+
+    if (state.allCompleted) {
+      const message = "全部任务点已完成。";
+      setPanelMessage(message);
+      notify("学习通视频助手", message);
+      showToast(message, "success");
+      return;
+    }
+
+    const message = state.message || "页面任务点已完成，即将跳转。";
+    setPanelMessage(message);
+    notify("学习通视频助手", message);
+    showToast(message, "success");
+    handleVideoEnded({ reason: "task-completed", title: document.title, url: location.href });
+  }
+
+  function getTaskCompletionState() {
+    const chapterInfos = getTeacherAjaxChapterInfos(document);
+    const activeChapter = chapterInfos.find((item) => item.current);
+    const countedChapters = chapterInfos.filter((item) => item.hasUnfinishCount);
+    const allCompleted = countedChapters.length > 0 && countedChapters.every((item) => item.unfinishCount === 0);
+    if (activeChapter && activeChapter.hasUnfinishCount && activeChapter.unfinishCount === 0) {
+      return {
+        hasEvidence: true,
+        completed: true,
+        allCompleted,
+        key: `chapter:${activeChapter.chapterId || activeChapter.text}`,
+        message: allCompleted ? "全部任务点已完成。" : "当前章节任务点已完成，即将跳转。",
+      };
+    }
+
+    const activeElement = document.querySelector(".posCatalog_active");
+    if (activeElement && activeElement.querySelector(".icon_Completed")) {
+      return {
+        hasEvidence: true,
+        completed: true,
+        allCompleted,
+        key: `active:${getElementText(activeElement)}`,
+        message: allCompleted ? "全部任务点已完成。" : "当前任务点已完成，即将跳转。",
+      };
+    }
+
+    const mediaState = getMediaTaskState();
+    if (mediaState.total > 0 && mediaState.unfinished === 0) {
+      return {
+        hasEvidence: true,
+        completed: true,
+        allCompleted,
+        key: `media:${mediaState.ids.join(",")}`,
+        message: allCompleted ? "全部任务点已完成。" : "音视频任务点已完成，即将跳转。",
+      };
+    }
+
+    return { hasEvidence: mediaState.total > 0 || chapterInfos.length > 0, completed: false, allCompleted };
+  }
+
+  function getMediaTaskState() {
+    const pageWindow = getPageWindow();
+    const attachments = Array.isArray(pageWindow && pageWindow.attachments) ? pageWindow.attachments : [];
+    const mediaJobIds = getMediaFrameJobIds();
+    const ids = [];
+    let unfinished = 0;
+
+    for (const attachment of attachments) {
+      const jobId = String(attachment.jobid || (attachment.property && attachment.property._jobid) || "");
+      if (!jobId || (mediaJobIds.length && !mediaJobIds.includes(jobId))) {
+        continue;
+      }
+      const type = String((attachment.property && (attachment.property.type || attachment.property.module)) || attachment.type || "");
+      const name = String((attachment.property && (attachment.property.name || attachment.property.title)) || "");
+      const looksMedia = /video|audio|mp4|mp3|m3u8|视频|音频/i.test(`${type} ${name}`) || mediaJobIds.includes(jobId);
+      if (!looksMedia) {
+        continue;
+      }
+      ids.push(jobId);
+      if (attachment.job === true || (!attachment.isPassed && attachment.job !== false)) {
+        unfinished += 1;
+      }
+    }
+
+    return { total: ids.length, unfinished, ids };
+  }
+
+  function getMediaFrameJobIds() {
+    const ids = [];
+    for (const frame of Array.from(document.querySelectorAll("iframe, frame"))) {
+      try {
+        const doc = frame.contentDocument || frame.contentWindow.document;
+        if (!doc || !doc.querySelector("#video,#audio,video,audio")) {
+          continue;
+        }
+        const dataText = frame.getAttribute("data") || (frame.contentWindow && frame.contentWindow.parent && frame.contentWindow.parent.frameElement && frame.contentWindow.parent.frameElement.getAttribute("data")) || "{}";
+        const data = JSON.parse(dataText || "{}");
+        const jobId = String(data.jobid || data._jobid || "");
+        if (jobId) {
+          ids.push(jobId);
+        }
+      } catch (_error) {
+        continue;
+      }
+    }
+    return ids;
   }
 
   function handleVideoEnded(data) {
@@ -473,6 +632,7 @@
         element: container,
         clickTarget: findTaskClickTarget(container) || link,
         current: CURRENT_TASK_RE.test(meta),
+        hasUnfinishCount: Number.isFinite(unfinishCount),
         unfinishCount: Number.isFinite(unfinishCount) ? unfinishCount : 0,
         locked: LOCKED_TASK_RE.test(haystack),
         unsafe: SAFE_SKIP_TASK_RE.test(text),
@@ -835,6 +995,7 @@
       <label><input type="checkbox" data-setting="enabled" ${settings.enabled ? "checked" : ""}> 启用</label>
       <label><input type="checkbox" data-setting="autoPlay" ${settings.autoPlay ? "checked" : ""}> 自动播放</label>
       <label><input type="checkbox" data-setting="autoNext" ${settings.autoNext ? "checked" : ""}> 视频结束后下一节</label>
+      <label><input type="checkbox" data-setting="completionCheck" ${settings.completionCheck ? "checked" : ""}> 检测任务点完成</label>
       <label class="${APP_ID}-speed">倍速
         <input type="number" data-setting="speed" min="0.5" max="4" step="0.1" value="${settings.speed}">
       </label>
@@ -1064,6 +1225,7 @@
       navigationMode: ["smart", "task-only", "button-only"].includes(value.navigationMode) ? value.navigationMode : "smart",
       maxNextRetries: Math.max(1, Math.min(20, Number(value.maxNextRetries) || DEFAULT_SETTINGS.maxNextRetries)),
       retryIntervalSeconds: Math.max(0.5, Math.min(10, Number(value.retryIntervalSeconds) || DEFAULT_SETTINGS.retryIntervalSeconds)),
+      completionCheck: value.completionCheck !== false,
       showPanel: value.showPanel !== false,
       debug: value.debug === true,
     };

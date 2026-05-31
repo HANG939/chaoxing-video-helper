@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Reworked auto-next around OCS-style task completion monitoring instead of relying only on video `ended` events.
+- Added media-task status detection from Chaoxing `attachments` and iframe job ids.
+- Added current-chapter completion detection from explicit `.jobUnfinishCount` and completion icons.
+- Extended speed control to Chaoxing `videojs` players when available.
+
 ## 0.1.6
 
 - Added browser notifications and in-page toast messages whenever next-task navigation is attempted successfully.

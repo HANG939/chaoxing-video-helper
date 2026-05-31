@@ -281,6 +281,10 @@ if (!teacherAjaxTarget || teacherAjaxTarget.chapterId !== "chapter-2") {
 if (JSON.stringify(teacherAjaxTarget.teacherAjaxArgs) !== JSON.stringify(["course", "clazz", "chapter-2"])) {
   throw new Error(`Expected parsed getTeacherAjax args, got ${JSON.stringify(teacherAjaxTarget.teacherAjaxArgs)}`);
 }
+const unknownCompletion = sandbox.window.__CXVH_TEST__.getTaskCompletionState();
+if (unknownCompletion.completed) {
+  throw new Error("Expected task completion detector to ignore missing current unfinish count");
+}
 
 const navigation = sandbox.window.__CXVH_TEST__.goNextLesson();
 if (!navigation.clicked || !nextLink.clicked) {
@@ -371,6 +375,16 @@ if (!prioritizedNavigation.clicked || !sandbox.nativeNextArgs || nextLink.clicke
     nextLinkClicked: nextLink.clicked === true,
     directNextClicked: directNextButton.clicked === true,
   })}`);
+}
+
+const currentInput = new FakeElement("input");
+currentInput.className = "jobUnfinishCount";
+currentInput.value = "0";
+currentInput.ownerDocument = document;
+currentTask.appendChild(currentInput);
+const completionState = sandbox.window.__CXVH_TEST__.getTaskCompletionState();
+if (!completionState.completed || completionState.allCompleted) {
+  throw new Error(`Expected explicit current unfinish count 0 to mark current chapter complete, got ${JSON.stringify(completionState)}`);
 }
 
 console.log("Userscript metadata, syntax, startup, task navigation, and native Chaoxing navigation smoke tests look good.");

@@ -10,6 +10,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Playback speed control from `0.5x` to `4x`.
 - Auto play the current course video when the page is ready.
 - Auto move to the next lesson after the current video ends.
+- OCS-style task completion monitoring: the script checks Chaoxing task status and can advance when the current media task is marked complete, even if the video `ended` event is unreliable.
 - Smart task-point navigation: when a normal "next" button is not available, the script scans the Chaoxing chapter list and prefers the next unfinished task point.
 - Native Chaoxing navigation: when the course page exposes its built-in next-step API, the script uses that path before falling back to chapter-list or DOM clicks.
 - OCS-style chapter scanning: reads `getTeacherAjax` chapter entries and unfinished task counts before using generic page scanning.
@@ -42,6 +43,7 @@ The script shows a small panel in the lower-right corner:
 - `启用`: turn the helper on or off.
 - `自动播放`: try to start the current video automatically.
 - `视频结束后下一节`: after the current video finishes, click the next lesson entry if one is visible.
+- `检测任务点完成`: monitor Chaoxing task status and jump after the current media/chapter task is complete.
 - `倍速`: set the playback speed.
 - `跳转延迟`: wait a few seconds before clicking the next lesson.
 - `跳转模式`: use `智能` by default. `任务点` only uses the chapter/task list, and `按钮` only clicks visible next buttons.
