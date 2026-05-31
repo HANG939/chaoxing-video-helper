@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4
+
+- Added quiz-task skipping so chapter tests are ignored and the helper continues to the next video/task point.
+- Moved in-page toast notifications to the top of the window to avoid covering course content.
+- Added a circular draggable Codex launcher that restores the console after hiding or minimizing it.
+- Added smooth minimize/expand behavior that opens the console near the launcher position.
+
 ## 0.2.3
 
 - Removed the small subtitle text from the floating console header.

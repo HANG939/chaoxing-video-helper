@@ -129,6 +129,14 @@ class FakeElement {
   get classList() {
     return {
       contains: (name) => this.className.split(/\s+/).includes(name),
+      add: (name) => {
+        if (!this.className.split(/\s+/).includes(name)) {
+          this.className = `${this.className} ${name}`.trim();
+        }
+      },
+      remove: (name) => {
+        this.className = this.className.split(/\s+/).filter((item) => item && item !== name).join(" ");
+      },
     };
   }
 
@@ -273,10 +281,13 @@ sandbox.window = {
   top: null,
   __CXVH_TEST_MODE__: true,
   innerWidth: 1280,
+  innerHeight: 800,
   addEventListener: () => {},
   postMessage: () => {},
   setTimeout: sandbox.setTimeout,
   setInterval: sandbox.setInterval,
+  requestAnimationFrame: (fn) => sandbox.setTimeout(fn),
+  cancelAnimationFrame: () => {},
 };
 sandbox.window.top = sandbox.window;
 
@@ -397,6 +408,62 @@ if (!prioritizedNavigation.clicked || !sandbox.nativeNextArgs || nextLink.clicke
   })}`);
 }
 
+const quizTask = new FakeElement("li");
+quizTask.className = "posCatalog_select";
+quizTask.textContent = "1.3 章节测验 未完成";
+const quizInput = new FakeElement("input");
+quizInput.className = "jobUnfinishCount";
+quizInput.value = "1";
+const quizLink = new FakeElement("a");
+quizLink.className = "posCatalog_name";
+quizLink.setAttribute("onclick", "getTeacherAjax('course','clazz','chapter-quiz')");
+quizTask.appendChild(quizInput);
+quizTask.appendChild(quizLink);
+const videoAfterQuiz = new FakeElement("li");
+videoAfterQuiz.className = "posCatalog_select";
+videoAfterQuiz.textContent = "1.4 下一个视频 未完成";
+const videoAfterInput = new FakeElement("input");
+videoAfterInput.className = "jobUnfinishCount";
+videoAfterInput.value = "1";
+const videoAfterLink = new FakeElement("a");
+videoAfterLink.className = "posCatalog_name";
+videoAfterLink.setAttribute("onclick", "getTeacherAjax('course','clazz','chapter-video-3')");
+videoAfterQuiz.appendChild(videoAfterInput);
+videoAfterQuiz.appendChild(videoAfterLink);
+for (const element of [quizTask, quizInput, quizLink, videoAfterQuiz, videoAfterInput, videoAfterLink]) {
+  element.ownerDocument = document;
+}
+currentTask.className = "posCatalog_select";
+nextTask.className = "posCatalog_select posCatalog_active";
+taskList.appendChild(quizTask);
+taskList.appendChild(videoAfterQuiz);
+sandbox.nativeNextArgs = null;
+nextLink.clicked = false;
+quizLink.clicked = false;
+videoAfterLink.clicked = false;
+const skipQuizTarget = sandbox.window.__CXVH_TEST__.findNextTeacherAjaxTask();
+if (!skipQuizTarget || skipQuizTarget.chapterId !== "chapter-video-3" || !skipQuizTarget.skippedUnsafeBefore) {
+  throw new Error(`Expected scanner to skip chapter quiz and choose the following video, got ${JSON.stringify(skipQuizTarget && {
+    chapterId: skipQuizTarget.chapterId,
+    skippedUnsafeBefore: skipQuizTarget.skippedUnsafeBefore,
+    unsafe: skipQuizTarget.unsafe,
+    text: skipQuizTarget.text,
+  })}`);
+}
+const skipQuizNavigation = sandbox.window.__CXVH_TEST__.goNextLesson();
+if (!skipQuizNavigation.clicked || !videoAfterLink.clicked || quizLink.clicked || sandbox.nativeNextArgs) {
+  throw new Error(`Expected smart navigation to skip quiz before native next, got ${JSON.stringify({
+    skipQuizNavigation,
+    videoAfterClicked: videoAfterLink.clicked === true,
+    quizClicked: quizLink.clicked === true,
+    nativeNextArgs: sandbox.nativeNextArgs,
+  })}`);
+}
+
+currentTask.className = "posCatalog_select posCatalog_active";
+nextTask.className = "posCatalog_select";
+quizTask.className = "posCatalog_select";
+videoAfterQuiz.className = "posCatalog_select";
 const currentInput = new FakeElement("input");
 currentInput.className = "jobUnfinishCount";
 currentInput.value = "0";

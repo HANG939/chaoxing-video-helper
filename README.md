@@ -14,11 +14,13 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Smart task-point navigation: when a normal "next" button is not available, the script scans the Chaoxing chapter list and prefers the next unfinished task point.
 - Native Chaoxing navigation: when the course page exposes its built-in next-step API, the script uses that path before falling back to chapter-list or DOM clicks.
 - OCS-style chapter scanning: reads `getTeacherAjax` chapter entries and unfinished task counts before using generic page scanning.
-- Jump notifications: when the script attempts to move to the next task point, it shows a browser notification and an in-page toast.
+- Chapter quiz skipping: when a chapter test/task point is encountered, the helper ignores it and continues looking for the next video/task point.
+- Jump notifications: when the script attempts to move to the next task point, it shows a browser notification and an in-page toast at the top of the window.
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
 - OCS-style console panel with live run state, task status, speed slider, pause/resume, immediate jump, completion check, and runtime logs.
 - The console can be dragged by its header; the position is saved.
+- Minimize the console into a draggable circular Codex launcher. Click the launcher to restore the console near that icon.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.
 - Supports Tampermonkey and ScriptCat.
 
@@ -52,6 +54,8 @@ The script shows an OCS-style console panel in the lower-right corner:
 - `重试次数`: how many times to re-check the page after a video ends.
 - `立即跳转`: test the current page's next-task navigation immediately.
 - `检测完成`: inspect whether the current page has explicit task-completion evidence.
+- `−`: minimize the console into the circular Codex launcher.
+- `×`: hide the console into the circular Codex launcher, so it can be restored if it was closed by accident.
 - Runtime logs: show recent speed changes, completion checks, navigation attempts, and all-done notices.
 
 Settings are saved by your userscript manager.

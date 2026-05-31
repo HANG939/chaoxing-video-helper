@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.3
+// @version      0.2.4
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -53,8 +53,11 @@
     retryIntervalSeconds: 2,
     completionCheck: true,
     showPanel: true,
+    panelMinimized: false,
     panelLeft: null,
     panelTop: null,
+    launcherLeft: null,
+    launcherTop: null,
     debug: false,
   };
 
@@ -88,10 +91,13 @@
   const UNFINISHED_TASK_RE = /(jobUnfinishCount|unfinished|unfinish|notDone|todo|orange|red|未完成|待完成|未学|任务点)/i;
   const LOCKED_TASK_RE = /(lock|locked|disabled|disable|catalog_points_sa|catalog_points_er|未开放|不可用|闯关|解锁|限制)/i;
   const SAFE_SKIP_TASK_RE = /(考试|测验|章节测试|作业|签到|人脸|验证码|答题|quiz|exam|homework|captcha|face)/i;
+  const QUIZ_TASK_RE = /(章节\s*(测验|测试)|章\s*(测验|测试)|测验|测试|考试|quiz|exam)/i;
+  const VIDEO_TASK_RE = /(视频|音频|video|audio|media|播放|观看)/i;
   const TEST_MODE = Boolean(window.__CXVH_TEST_MODE__);
 
   let settings = loadSettings();
   let panel = null;
+  let launcher = null;
   let lastVideo = null;
   let endedAt = 0;
   let statusTimer = 0;
@@ -101,6 +107,7 @@
   let lastCompletionJumpAt = 0;
   let observer = null;
   let panelDrag = null;
+  let launcherDrag = null;
   const runtime = {
     state: "待机",
     media: "未检测到视频",
@@ -119,7 +126,9 @@
 
   if (typeof GM_registerMenuCommand === "function") {
     GM_registerMenuCommand("Toggle Chaoxing Video Helper panel", () => {
-      settings.showPanel = !settings.showPanel;
+      const shouldShow = !settings.showPanel || settings.panelMinimized;
+      settings.showPanel = shouldShow;
+      settings.panelMinimized = false;
       saveSettings(settings);
       broadcastSettings();
       renderPanel();
@@ -407,6 +416,22 @@
     const state = getTaskCompletionState();
     runtime.task = state.hasEvidence ? (state.key || "已识别任务点") : "等待任务点";
     updatePanelRuntime();
+    const skippable = getCurrentSkippableTaskState();
+    if (skippable.shouldSkip) {
+      lastCompletionJumpAt = now;
+      const message = skippable.message || "检测到章节测验任务点，正在跳过。";
+      runtime.state = "跳转中";
+      runtime.task = "跳过章节测验";
+      setPanelMessage(message);
+      showToast(message, "info");
+      logEvent(message, "info");
+      const result = goNextLesson({ skipNativeOnce: true });
+      if (!result.clicked) {
+        setPanelMessage(result.message || "未找到下一个视频任务点。");
+        showToast(result.message || "未找到下一个视频任务点。", "warn");
+      }
+      return;
+    }
     if (!state.hasEvidence || !state.completed) {
       return;
     }
@@ -475,6 +500,32 @@
     }
 
     return { hasEvidence: mediaState.total > 0 || chapterInfos.length > 0, completed: false, allCompleted };
+  }
+
+  function getCurrentSkippableTaskState() {
+    const infos = getSearchRoots().flatMap((root) => getTeacherAjaxChapterInfos(root));
+    const active = infos.find((item) => item.current && item.unsafe);
+    if (active) {
+      return {
+        shouldSkip: true,
+        key: `skip:${active.chapterId || active.text}`,
+        message: "检测到章节测验任务点，已自动忽略并寻找下一个视频任务点。",
+      };
+    }
+
+    const activeElement = document.querySelector(".posCatalog_active,.posCatalog_select.active,.active[class*='chapter']");
+    if (activeElement) {
+      const text = `${getElementText(activeElement)} ${getElementMeta(activeElement)}`;
+      if (isSkippableTaskText(text)) {
+        return {
+          shouldSkip: true,
+          key: `skip:${getElementText(activeElement)}`,
+          message: "检测到章节测验任务点，已自动忽略并寻找下一个视频任务点。",
+        };
+      }
+    }
+
+    return { shouldSkip: false };
   }
 
   function getMediaTaskState() {
@@ -562,11 +613,24 @@
     debug("video ended", data);
   }
 
-  function goNextLesson() {
+  function goNextLesson(options = {}) {
     if (settings.navigationMode !== "button-only") {
-      const nativeNext = tryNativeNextStep();
-      if (nativeNext.clicked) {
-        return announceNavigation(nativeNext);
+      const skipAwareTask = findNextTeacherAjaxTask();
+      if (skipAwareTask && skipAwareTask.skippedUnsafeBefore) {
+        const nativeTeacherAjax = tryTeacherAjaxNativeTask(skipAwareTask);
+        if (nativeTeacherAjax.clicked) {
+          nativeTeacherAjax.message = "已跳过章节测验，进入下一个视频任务点。";
+          return announceNavigation(nativeTeacherAjax);
+        }
+        clickElement(skipAwareTask.clickTarget || skipAwareTask.element);
+        return announceNavigation({ clicked: true, message: "已跳过章节测验，进入下一个视频任务点。" });
+      }
+
+      if (!options.skipNativeOnce) {
+        const nativeNext = tryNativeNextStep();
+        if (nativeNext.clicked) {
+          return announceNavigation(nativeNext);
+        }
       }
 
       const teacherAjaxTask = findNextTeacherAjaxTask();
@@ -639,17 +703,23 @@
     const roots = getSearchRoots();
     for (const root of roots) {
       const items = getTeacherAjaxChapterInfos(root)
-        .filter((item) => item.clickTarget && !item.locked && !item.unsafe && (item.unfinishCount > 0 || item.current));
+        .filter((item) => item.clickTarget && !item.locked);
       if (!items.length) {
         continue;
       }
 
       const currentIndex = items.findIndex((item) => item.current);
       if (currentIndex >= 0 && currentIndex + 1 < items.length) {
-        return items[currentIndex + 1];
+        const afterCurrent = items.slice(currentIndex + 1);
+        const nextSelectableIndex = afterCurrent.findIndex(isSelectableTaskItem);
+        if (nextSelectableIndex >= 0) {
+          const next = afterCurrent[nextSelectableIndex];
+          next.skippedUnsafeBefore = items[currentIndex].unsafe || afterCurrent.slice(0, nextSelectableIndex).some((item) => item.unsafe);
+          return next;
+        }
       }
 
-      const firstUnfinished = items.find((item) => item.unfinishCount > 0 && !item.current);
+      const firstUnfinished = items.find((item) => isSelectableTaskItem(item) && item.unfinishCount > 0 && !item.current);
       if (firstUnfinished) {
         return firstUnfinished;
       }
@@ -681,7 +751,8 @@
         hasUnfinishCount: Number.isFinite(unfinishCount),
         unfinishCount: Number.isFinite(unfinishCount) ? unfinishCount : 0,
         locked: LOCKED_TASK_RE.test(haystack),
-        unsafe: SAFE_SKIP_TASK_RE.test(text),
+        unsafe: isSkippableTaskText(haystack),
+        looksVideo: VIDEO_TASK_RE.test(haystack),
         chapterId: parseTeacherAjaxChapterId(link.getAttribute("onclick") || ""),
         teacherAjaxArgs: parseTeacherAjaxArgs(link.getAttribute("onclick") || ""),
         text,
@@ -689,6 +760,10 @@
     }
 
     return infos;
+  }
+
+  function isSelectableTaskItem(item) {
+    return Boolean(item && !item.locked && !item.unsafe && (item.unfinishCount > 0 || item.looksVideo || !item.hasUnfinishCount));
   }
 
   function parseTeacherAjaxChapterId(onclick) {
@@ -801,17 +876,17 @@
     const currentIndex = candidates.findIndex((item) => item.current);
     const afterCurrent = currentIndex >= 0 ? candidates.slice(currentIndex + 1) : candidates;
 
-    const nextUnfinished = afterCurrent.find((item) => item.unfinished && item.score > 0);
+    const nextUnfinished = afterCurrent.find((item) => isSelectableScoredTask(item) && item.unfinished && item.score > 0);
     if (nextUnfinished) {
       return nextUnfinished;
     }
 
-    const firstUnfinished = candidates.find((item) => item.unfinished && !item.current && item.score > 0);
+    const firstUnfinished = candidates.find((item) => isSelectableScoredTask(item) && item.unfinished && !item.current && item.score > 0);
     if (firstUnfinished) {
       return firstUnfinished;
     }
 
-    const sequential = afterCurrent.find((item) => item.score > 0);
+    const sequential = afterCurrent.find((item) => isSelectableScoredTask(item) && item.score > 0);
     if (sequential) {
       return sequential;
     }
@@ -834,7 +909,7 @@
       seen.add(keyElement);
 
       const item = scoreTaskElement(keyElement);
-      if (item.score > 0) {
+      if (item.score > 0 || item.current) {
         candidates.push(item);
       }
     }
@@ -853,7 +928,8 @@
     const finished = unfinishCount === 0 || (!hasUnfinishedMarker && FINISHED_TASK_RE.test(haystack)) || Boolean(element.querySelector(".icon_Completed"));
     const unfinished = unfinishCount > 0 || (hasUnfinishedMarker && !finished);
     const locked = LOCKED_TASK_RE.test(haystack);
-    const unsafe = SAFE_SKIP_TASK_RE.test(text);
+    const unsafe = isSkippableTaskText(haystack);
+    const looksVideo = VIDEO_TASK_RE.test(haystack);
 
     let score = 0;
     if (clickTarget) score += 40;
@@ -862,8 +938,9 @@
     if (unfinished) score += 80;
     if (current) score += 10;
     if (finished && !current) score -= 35;
-    if (locked || unsafe) score = 0;
     if (text.length > 180 && !/posCatalog|chapter/i.test(meta)) score -= 30;
+    if (locked) score = 0;
+    if (unsafe) score = current ? 1 : 0;
 
     return {
       element,
@@ -873,8 +950,18 @@
       finished,
       unfinished,
       unfinishCount,
+      unsafe,
+      looksVideo,
       text,
     };
+  }
+
+  function isSelectableScoredTask(item) {
+    return Boolean(item && !item.unsafe && (item.looksVideo || item.unfinished || item.score >= 40));
+  }
+
+  function isSkippableTaskText(text) {
+    return QUIZ_TASK_RE.test(text) || SAFE_SKIP_TASK_RE.test(text);
   }
 
   function closestTaskContainer(element) {
@@ -1021,17 +1108,25 @@
     if (!isTopWindow()) {
       return;
     }
-    if (!settings.showPanel) {
+    if (!settings.showPanel || settings.panelMinimized) {
       if (panel) {
         panel.remove();
         panel = null;
       }
+      renderLauncher();
       return;
     }
+    removeLauncher();
     if (!panel) {
       panel = document.createElement("div");
       panel.id = `${APP_ID}-panel`;
       document.documentElement.appendChild(panel);
+      panel.classList.add(`${APP_ID}-opening`);
+      requestFrame(() => {
+        if (panel) {
+          panel.classList.remove(`${APP_ID}-opening`);
+        }
+      });
     }
     panel.innerHTML = `
       <div class="${APP_ID}-head">
@@ -1040,6 +1135,7 @@
         </div>
         <div class="${APP_ID}-head-actions">
           <span class="${APP_ID}-pill" data-role="run-state">${runtime.state}</span>
+          <button type="button" data-action="minimize" title="最小化为圆形图标">−</button>
           <button type="button" data-action="hide" title="隐藏面板">×</button>
         </div>
       </div>
@@ -1148,8 +1244,13 @@
     }
     if (target.dataset.action === "hide") {
       settings.showPanel = false;
+      settings.panelMinimized = true;
       saveSettings(settings);
       renderPanel();
+      return;
+    }
+    if (target.dataset.action === "minimize") {
+      minimizePanelToLauncher();
       return;
     }
     if (target.dataset.action === "toggle-enabled") {
@@ -1222,7 +1323,7 @@
     if (panelDrag.raf) {
       return;
     }
-    panelDrag.raf = window.requestAnimationFrame(() => {
+    panelDrag.raf = requestFrame(() => {
       if (!panel || !panelDrag) {
         return;
       }
@@ -1236,7 +1337,7 @@
       return;
     }
     if (panelDrag.raf) {
-      window.cancelAnimationFrame(panelDrag.raf);
+      cancelFrame(panelDrag.raf);
     }
     const left = clampPanelLeft(panelDrag.left + panelDrag.dx);
     const top = clampPanelTop(panelDrag.top + panelDrag.dy);
@@ -1253,6 +1354,150 @@
     panelDrag = null;
   }
 
+  function minimizePanelToLauncher() {
+    let left = settings.launcherLeft;
+    let top = settings.launcherTop;
+    if (panel) {
+      const rect = panel.getBoundingClientRect();
+      left = rect.right - 56;
+      top = rect.top + 8;
+    }
+    settings.showPanel = true;
+    settings.panelMinimized = true;
+    settings.launcherLeft = clampLauncherLeft(left);
+    settings.launcherTop = clampLauncherTop(top);
+    saveSettings(settings);
+    renderPanel();
+  }
+
+  function renderLauncher() {
+    if (!isTopWindow()) {
+      return;
+    }
+    if (!launcher) {
+      launcher = document.createElement("button");
+      launcher.id = `${APP_ID}-launcher`;
+      launcher.type = "button";
+      launcher.title = "展开 Chaoxing Helper 控制台";
+      launcher.innerHTML = `<span>Codex</span>`;
+      document.documentElement.appendChild(launcher);
+      launcher.classList.add(`${APP_ID}-launcher-pop`);
+      requestFrame(() => {
+        if (launcher) {
+          launcher.classList.remove(`${APP_ID}-launcher-pop`);
+        }
+      });
+    }
+    launcher.onclick = onLauncherClick;
+    launcher.onpointerdown = onLauncherPointerDown;
+    applyLauncherPosition();
+  }
+
+  function removeLauncher() {
+    if (launcher) {
+      launcher.remove();
+      launcher = null;
+    }
+  }
+
+  function applyLauncherPosition() {
+    if (!launcher) {
+      return;
+    }
+    const left = isFinitePanelCoord(settings.launcherLeft) ? clampLauncherLeft(settings.launcherLeft) : window.innerWidth - 78;
+    const top = isFinitePanelCoord(settings.launcherTop) ? clampLauncherTop(settings.launcherTop) : Math.max(80, window.innerHeight - 110);
+    launcher.style.left = `${left}px`;
+    launcher.style.top = `${top}px`;
+    launcher.style.right = "auto";
+    launcher.style.bottom = "auto";
+  }
+
+  function onLauncherClick(event) {
+    if (launcherDrag && launcherDrag.moved) {
+      event.preventDefault();
+      return;
+    }
+    expandPanelFromLauncher();
+  }
+
+  function expandPanelFromLauncher() {
+    const rect = launcher ? launcher.getBoundingClientRect() : null;
+    const panelWidth = 320;
+    if (rect) {
+      const opensLeft = rect.left > window.innerWidth / 2;
+      settings.panelLeft = clampPanelLeft(opensLeft ? rect.right - panelWidth : rect.left);
+      settings.panelTop = clampPanelTop(rect.top);
+      settings.launcherLeft = clampLauncherLeft(rect.left);
+      settings.launcherTop = clampLauncherTop(rect.top);
+    }
+    settings.showPanel = true;
+    settings.panelMinimized = false;
+    saveSettings(settings);
+    renderPanel();
+  }
+
+  function onLauncherPointerDown(event) {
+    if (!launcher || event.button !== 0) {
+      return;
+    }
+    const rect = launcher.getBoundingClientRect();
+    launcherDrag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top,
+      dx: 0,
+      dy: 0,
+      raf: 0,
+      moved: false,
+    };
+    launcher.classList.add(`${APP_ID}-dragging`);
+    launcher.setPointerCapture && launcher.setPointerCapture(event.pointerId);
+    window.addEventListener("pointermove", onLauncherPointerMove, { passive: true });
+    window.addEventListener("pointerup", onLauncherPointerUp, { once: true });
+  }
+
+  function onLauncherPointerMove(event) {
+    if (!launcher || !launcherDrag) {
+      return;
+    }
+    launcherDrag.dx = event.clientX - launcherDrag.startX;
+    launcherDrag.dy = event.clientY - launcherDrag.startY;
+    launcherDrag.moved = Math.abs(launcherDrag.dx) + Math.abs(launcherDrag.dy) > 4;
+    if (launcherDrag.raf) {
+      return;
+    }
+    launcherDrag.raf = requestFrame(() => {
+      if (!launcher || !launcherDrag) {
+        return;
+      }
+      launcher.style.transform = `translate3d(${launcherDrag.dx}px, ${launcherDrag.dy}px, 0)`;
+      launcherDrag.raf = 0;
+    });
+  }
+
+  function onLauncherPointerUp() {
+    if (!launcher || !launcherDrag) {
+      return;
+    }
+    if (launcherDrag.raf) {
+      cancelFrame(launcherDrag.raf);
+    }
+    const left = clampLauncherLeft(launcherDrag.left + launcherDrag.dx);
+    const top = clampLauncherTop(launcherDrag.top + launcherDrag.dy);
+    launcher.style.transform = "";
+    launcher.style.left = `${left}px`;
+    launcher.style.top = `${top}px`;
+    launcher.classList.remove(`${APP_ID}-dragging`);
+    window.removeEventListener("pointermove", onLauncherPointerMove);
+    settings.launcherLeft = left;
+    settings.launcherTop = top;
+    saveSettings(settings);
+    window.setTimeout(() => {
+      launcherDrag = null;
+    }, 0);
+  }
+
   function clampPanelLeft(value) {
     const width = panel ? panel.offsetWidth || 320 : 320;
     return Math.max(6, Math.min(window.innerWidth - width - 6, Number(value) || 6));
@@ -1261,6 +1506,14 @@
   function clampPanelTop(value) {
     const height = panel ? panel.offsetHeight || 420 : 420;
     return Math.max(6, Math.min(window.innerHeight - height - 6, Number(value) || 6));
+  }
+
+  function clampLauncherLeft(value) {
+    return Math.max(8, Math.min(window.innerWidth - 64, Number(value) || 8));
+  }
+
+  function clampLauncherTop(value) {
+    return Math.max(8, Math.min(window.innerHeight - 64, Number(value) || 8));
   }
 
   function updatePanelStatus(data) {
@@ -1346,6 +1599,12 @@
         box-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
         overflow: hidden;
         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        transform-origin: top right;
+        transition: opacity 140ms ease, transform 140ms ease;
+      }
+      #${APP_ID}-panel.${APP_ID}-opening {
+        opacity: 0;
+        transform: translate3d(0, -8px, 0) scale(.98);
       }
       #${APP_ID}-panel * { box-sizing: border-box; }
       #${APP_ID}-panel .${APP_ID}-head {
@@ -1489,6 +1748,56 @@
         display: block;
         color: #94a3b8;
       }
+      #${APP_ID}-launcher {
+        position: fixed;
+        z-index: 2147483647;
+        width: 56px;
+        height: 56px;
+        border: 0;
+        border-radius: 999px;
+        background: radial-gradient(circle at 32% 24%, #60a5fa, #1d4ed8 58%, #172554);
+        color: #fff;
+        box-shadow: 0 14px 34px rgba(15,23,42,.24);
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+        font: 700 10px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        transition: box-shadow 140ms ease, opacity 140ms ease, transform 140ms ease;
+      }
+      #${APP_ID}-launcher span {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+      }
+      #${APP_ID}-launcher.${APP_ID}-launcher-pop {
+        opacity: 0;
+        transform: scale(.88);
+      }
+      #${APP_ID}-launcher.${APP_ID}-dragging {
+        cursor: grabbing;
+        will-change: transform;
+        box-shadow: 0 18px 42px rgba(15,23,42,.3);
+      }
+      #${APP_ID}-toast {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        z-index: 2147483647;
+        max-width: min(420px, calc(100vw - 32px));
+        padding: 10px 12px;
+        border-radius: 8px;
+        box-shadow: 0 12px 30px rgba(15,23,42,.22);
+        font: 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        color: #fff;
+        transform: translate3d(-50%, 0, 0);
+        animation: ${APP_ID}-toast-in 150ms ease both;
+      }
+      @keyframes ${APP_ID}-toast-in {
+        from { opacity: 0; transform: translate3d(-50%, -8px, 0); }
+        to { opacity: 1; transform: translate3d(-50%, 0, 0); }
+      }
     `;
     if (typeof GM_addStyle === "function") {
       GM_addStyle(css);
@@ -1534,8 +1843,11 @@
       retryIntervalSeconds: Math.max(0.5, Math.min(10, Number(value.retryIntervalSeconds) || DEFAULT_SETTINGS.retryIntervalSeconds)),
       completionCheck: value.completionCheck !== false,
       showPanel: value.showPanel !== false,
+      panelMinimized: value.panelMinimized === true,
       panelLeft: isFinitePanelCoord(value.panelLeft) ? Number(value.panelLeft) : null,
       panelTop: isFinitePanelCoord(value.panelTop) ? Number(value.panelTop) : null,
+      launcherLeft: isFinitePanelCoord(value.launcherLeft) ? Number(value.launcherLeft) : null,
+      launcherTop: isFinitePanelCoord(value.launcherTop) ? Number(value.launcherTop) : null,
       debug: value.debug === true,
     };
   }
@@ -1646,6 +1958,18 @@
     return Math.max(0.5, Math.min(4, Math.round(speed * 10) / 10));
   }
 
+  function requestFrame(callback) {
+    const raf = window.requestAnimationFrame || ((fn) => window.setTimeout(fn, 16));
+    return raf.call(window, callback);
+  }
+
+  function cancelFrame(id) {
+    const caf = window.cancelAnimationFrame || window.clearTimeout;
+    if (caf) {
+      caf.call(window, id);
+    }
+  }
+
   function notify(title, text) {
     if (typeof GM_notification === "function") {
       GM_notification({ title, text, timeout: 5000, silent: false });
@@ -1664,19 +1988,7 @@
     const toast = document.createElement("div");
     toast.id = `${APP_ID}-toast`;
     toast.textContent = message;
-    toast.style.cssText = [
-      "position:fixed",
-      "right:18px",
-      "bottom:310px",
-      "z-index:2147483647",
-      "max-width:320px",
-      "padding:10px 12px",
-      "border-radius:6px",
-      "box-shadow:0 12px 30px rgba(15,23,42,.22)",
-      "font:14px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif",
-      "color:#fff",
-      `background:${type === "warn" ? "#d97706" : type === "success" ? "#2563eb" : "#334155"}`,
-    ].join(";");
+    toast.style.background = type === "warn" ? "#d97706" : type === "success" ? "#2563eb" : "#334155";
     document.documentElement.appendChild(toast);
     window.setTimeout(() => {
       if (toast.parentElement) {
