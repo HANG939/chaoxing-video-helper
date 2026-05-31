@@ -26,6 +26,22 @@ if (!source.includes("https://raw.githubusercontent.com/HANG939/chaoxing-video-h
   throw new Error("Missing raw GitHub install/update URL");
 }
 
+const requiredMatches = [
+  "// @match        *://*.chaoxing.com/*",
+  "// @match        *://mooc1.chaoxing.com/*",
+  "// @include      *://mooc1.chaoxing.com/*",
+];
+
+for (const marker of requiredMatches) {
+  if (!source.includes(marker)) {
+    throw new Error(`Missing explicit Chaoxing matcher: ${marker}`);
+  }
+}
+
+if (source.includes("// @match        *://*/*")) {
+  throw new Error("Avoid broad @match *://*/* because some userscript managers skip or restrict it");
+}
+
 const script = new vm.Script(source, { filename: path });
 
 class FakeElement {

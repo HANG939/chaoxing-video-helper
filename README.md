@@ -65,7 +65,9 @@ The script activates on pages or frames related to:
 - `xueyinonline.com`
 - common Chaoxing course/video frames
 
-The userscript uses a broad `@match *://*/*` rule because Chaoxing course videos are often loaded in nested iframes from different hosts. The script includes a runtime guard and exits unless the current page or referrer looks related to Chaoxing/Xueyin.
+The userscript uses explicit Chaoxing/Xueyin match rules instead of a broad `@match *://*/*` rule. This makes Tampermonkey and ScriptCat more likely to execute it reliably on course pages while still keeping a runtime activation guard.
+
+If your userscript manager says the script was not executed, enable the browser extension's user-script permission first. In Chromium-based browsers this is often called `Allow User Scripts` or `允许用户脚本`.
 
 ## Project Boundaries
 

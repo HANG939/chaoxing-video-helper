@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Replaced broad `@match *://*/*` metadata with explicit Chaoxing/Xueyin URL matchers so userscript managers reliably execute the script on course pages.
+- Added validation to prevent broad-match regressions.
+
 ## 0.2.1
 
 - Rebuilt the floating panel into an OCS-style control console with live state, task status, speed slider, run controls, and logs.

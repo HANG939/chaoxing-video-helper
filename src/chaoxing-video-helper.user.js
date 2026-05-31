@@ -2,12 +2,23 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.1
+// @version      0.2.2
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
 // @license      MIT
-// @match        *://*/*
+// @match        *://*.chaoxing.com/*
+// @match        *://*.chaoxing.com.cn/*
+// @match        *://*.mooc1.chaoxing.com/*
+// @match        *://mooc1.chaoxing.com/*
+// @match        *://*.xueyinonline.com/*
+// @match        *://*.xuexi365.com/*
+// @match        *://*.edu.cn/*
+// @include      *://*.chaoxing.com/*
+// @include      *://*.chaoxing.com.cn/*
+// @include      *://mooc1.chaoxing.com/*
+// @include      *://*.xueyinonline.com/*
+// @include      *://*.xuexi365.com/*
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_getValue
