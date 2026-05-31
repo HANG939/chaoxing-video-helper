@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Hardened native Chaoxing page access so cross-frame restrictions fall back safely.
+- Added an alternate GitHub raw install link for moments when GitHub's raw CDN is stale.
+
 ## 0.1.2
 
 - Added a Chaoxing native navigation path using the page's own `PCount.next(...)` API when available.
