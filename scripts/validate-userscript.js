@@ -42,6 +42,10 @@ if (source.includes("// @match        *://*/*")) {
   throw new Error("Avoid broad @match *://*/* because some userscript managers skip or restrict it");
 }
 
+if (source.includes("OCS-style console")) {
+  throw new Error("Panel subtitle should not include the removed small OCS-style console text");
+}
+
 const script = new vm.Script(source, { filename: path });
 
 class FakeElement {

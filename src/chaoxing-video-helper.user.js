@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.2
+// @version      0.2.3
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -53,6 +53,8 @@
     retryIntervalSeconds: 2,
     completionCheck: true,
     showPanel: true,
+    panelLeft: null,
+    panelTop: null,
     debug: false,
   };
 
@@ -98,6 +100,7 @@
   let lastCompletionKey = "";
   let lastCompletionJumpAt = 0;
   let observer = null;
+  let panelDrag = null;
   const runtime = {
     state: "待机",
     media: "未检测到视频",
@@ -1034,7 +1037,6 @@
       <div class="${APP_ID}-head">
         <div>
           <strong>Chaoxing Helper</strong>
-          <small>OCS-style console</small>
         </div>
         <div class="${APP_ID}-head-actions">
           <span class="${APP_ID}-pill" data-role="run-state">${runtime.state}</span>
@@ -1089,7 +1091,28 @@
     panel.onchange = onPanelChange;
     panel.oninput = onPanelChange;
     panel.onclick = onPanelClick;
+    panel.onpointerdown = onPanelPointerDown;
+    applyPanelPosition();
     updatePanelRuntime();
+  }
+
+  function applyPanelPosition() {
+    if (!panel) {
+      return;
+    }
+    if (Number.isFinite(settings.panelLeft) && Number.isFinite(settings.panelTop)) {
+      const left = clampPanelLeft(settings.panelLeft);
+      const top = clampPanelTop(settings.panelTop);
+      panel.style.left = `${left}px`;
+      panel.style.top = `${top}px`;
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+    } else {
+      panel.style.left = "auto";
+      panel.style.top = "auto";
+      panel.style.right = "18px";
+      panel.style.bottom = "18px";
+    }
   }
 
   function onPanelChange(event) {
@@ -1164,6 +1187,80 @@
       renderPanel();
       applySettingsToVideo();
     }
+  }
+
+  function onPanelPointerDown(event) {
+    if (!panel || event.button !== 0) {
+      return;
+    }
+    const head = event.target && event.target.closest ? event.target.closest(`.${APP_ID}-head`) : null;
+    if (!head || (event.target.closest && event.target.closest("button,input,select,a"))) {
+      return;
+    }
+    const rect = panel.getBoundingClientRect();
+    panelDrag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top,
+      dx: 0,
+      dy: 0,
+      raf: 0,
+    };
+    panel.classList.add(`${APP_ID}-dragging`);
+    panel.setPointerCapture && panel.setPointerCapture(event.pointerId);
+    window.addEventListener("pointermove", onPanelPointerMove, { passive: true });
+    window.addEventListener("pointerup", onPanelPointerUp, { once: true });
+  }
+
+  function onPanelPointerMove(event) {
+    if (!panel || !panelDrag) {
+      return;
+    }
+    panelDrag.dx = event.clientX - panelDrag.startX;
+    panelDrag.dy = event.clientY - panelDrag.startY;
+    if (panelDrag.raf) {
+      return;
+    }
+    panelDrag.raf = window.requestAnimationFrame(() => {
+      if (!panel || !panelDrag) {
+        return;
+      }
+      panel.style.transform = `translate3d(${panelDrag.dx}px, ${panelDrag.dy}px, 0)`;
+      panelDrag.raf = 0;
+    });
+  }
+
+  function onPanelPointerUp() {
+    if (!panel || !panelDrag) {
+      return;
+    }
+    if (panelDrag.raf) {
+      window.cancelAnimationFrame(panelDrag.raf);
+    }
+    const left = clampPanelLeft(panelDrag.left + panelDrag.dx);
+    const top = clampPanelTop(panelDrag.top + panelDrag.dy);
+    panel.style.transform = "";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.classList.remove(`${APP_ID}-dragging`);
+    window.removeEventListener("pointermove", onPanelPointerMove);
+    settings.panelLeft = left;
+    settings.panelTop = top;
+    saveSettings(settings);
+    panelDrag = null;
+  }
+
+  function clampPanelLeft(value) {
+    const width = panel ? panel.offsetWidth || 320 : 320;
+    return Math.max(6, Math.min(window.innerWidth - width - 6, Number(value) || 6));
+  }
+
+  function clampPanelTop(value) {
+    const height = panel ? panel.offsetHeight || 420 : 420;
+    return Math.max(6, Math.min(window.innerHeight - height - 6, Number(value) || 6));
   }
 
   function updatePanelStatus(data) {
@@ -1258,9 +1355,19 @@
         padding: 10px 12px;
         background: #1d4ed8;
         color: #fff;
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
       }
       #${APP_ID}-panel .${APP_ID}-head strong { display: block; font-size: 15px; }
-      #${APP_ID}-panel .${APP_ID}-head small { display: block; opacity: .78; font-size: 11px; }
+      #${APP_ID}-panel.${APP_ID}-dragging .${APP_ID}-head { cursor: grabbing; }
+      #${APP_ID}-panel.${APP_ID}-dragging {
+        will-change: transform;
+        pointer-events: none;
+      }
+      #${APP_ID}-panel.${APP_ID}-dragging .${APP_ID}-head {
+        pointer-events: auto;
+      }
       #${APP_ID}-panel .${APP_ID}-head-actions {
         display: flex;
         align-items: center;
@@ -1427,8 +1534,14 @@
       retryIntervalSeconds: Math.max(0.5, Math.min(10, Number(value.retryIntervalSeconds) || DEFAULT_SETTINGS.retryIntervalSeconds)),
       completionCheck: value.completionCheck !== false,
       showPanel: value.showPanel !== false,
+      panelLeft: isFinitePanelCoord(value.panelLeft) ? Number(value.panelLeft) : null,
+      panelTop: isFinitePanelCoord(value.panelTop) ? Number(value.panelTop) : null,
       debug: value.debug === true,
     };
+  }
+
+  function isFinitePanelCoord(value) {
+    return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
   }
 
   function broadcastSettings() {

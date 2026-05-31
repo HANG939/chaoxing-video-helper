@@ -18,6 +18,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
 - OCS-style console panel with live run state, task status, speed slider, pause/resume, immediate jump, completion check, and runtime logs.
+- The console can be dragged by its header; the position is saved.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.
 - Supports Tampermonkey and ScriptCat.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Removed the small subtitle text from the floating console header.
+- Added smooth mouse dragging for the console using transform updates during drag and saved panel position after release.
+
 ## 0.2.2
 
 - Replaced broad `@match *://*/*` metadata with explicit Chaoxing/Xueyin URL matchers so userscript managers reliably execute the script on course pages.
