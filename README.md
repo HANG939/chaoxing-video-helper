@@ -13,6 +13,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Smart task-point navigation: when a normal "next" button is not available, the script scans the Chaoxing chapter list and prefers the next unfinished task point.
 - Native Chaoxing navigation: when the course page exposes its built-in next-step API, the script uses that path before falling back to chapter-list or DOM clicks.
 - OCS-style chapter scanning: reads `getTeacherAjax` chapter entries and unfinished task counts before using generic page scanning.
+- Jump notifications: when the script attempts to move to the next task point, it shows a browser notification and an in-page toast.
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.
@@ -48,6 +49,8 @@ The script shows a small panel in the lower-right corner:
 - `立即跳转`: test the current page's next-task navigation immediately.
 
 Settings are saved by your userscript manager.
+
+If navigation still does not work on a customized school page, click `立即跳转` once and note the message shown in the page toast. That message identifies which navigation path was available.
 
 ## Supported Sites
 

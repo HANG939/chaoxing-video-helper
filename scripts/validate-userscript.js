@@ -278,6 +278,9 @@ if (!teacherAjaxTarget || teacherAjaxTarget.chapterId !== "chapter-2") {
     unfinishCount: teacherAjaxTarget.unfinishCount,
   })}`);
 }
+if (JSON.stringify(teacherAjaxTarget.teacherAjaxArgs) !== JSON.stringify(["course", "clazz", "chapter-2"])) {
+  throw new Error(`Expected parsed getTeacherAjax args, got ${JSON.stringify(teacherAjaxTarget.teacherAjaxArgs)}`);
+}
 
 const navigation = sandbox.window.__CXVH_TEST__.goNextLesson();
 if (!navigation.clicked || !nextLink.clicked) {
@@ -311,6 +314,18 @@ if (!navigation.clicked || !nextLink.clicked) {
     })}`
   );
 }
+
+sandbox.window.getTeacherAjax = (...args) => {
+  sandbox.teacherAjaxArgs = args;
+};
+const teacherAjaxNavigation = sandbox.window.__CXVH_TEST__.tryTeacherAjaxNativeTask(teacherAjaxTarget);
+if (!teacherAjaxNavigation.clicked || JSON.stringify(sandbox.teacherAjaxArgs) !== JSON.stringify(["course", "clazz", "chapter-2"])) {
+  throw new Error(`Expected direct getTeacherAjax navigation to run, got ${JSON.stringify({
+    teacherAjaxNavigation,
+    teacherAjaxArgs: sandbox.teacherAjaxArgs,
+  })}`);
+}
+delete sandbox.window.getTeacherAjax;
 
 const curCourseId = new FakeElement("input");
 curCourseId.id = "curCourseId";

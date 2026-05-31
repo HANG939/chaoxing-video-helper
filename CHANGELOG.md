@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Added browser notifications and in-page toast messages whenever next-task navigation is attempted successfully.
+- Added a direct `getTeacherAjax(...)` native fallback for Chaoxing chapter-list navigation.
+- Added a userscript menu command for testing next-task navigation from the script manager.
+
 ## 0.1.5
 
 - Matched OCS-style `PCount.next(...)` tab-count behavior more closely.

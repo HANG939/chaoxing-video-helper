@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.1.5
+// @version      0.1.6
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -97,6 +97,14 @@
       broadcastSettings();
       renderPanel();
     });
+    GM_registerMenuCommand("Test next task navigation", () => {
+      const result = goNextLesson();
+      setPanelMessage(result.message || (result.clicked ? "已尝试跳转。" : "未找到下一任务点。"));
+      if (!result.clicked) {
+        notify("学习通视频助手", result.message || "未找到下一任务点。");
+        showToast(result.message || "未找到下一任务点。", "warn");
+      }
+    });
   }
 
   installMessageBridge();
@@ -111,6 +119,7 @@
       findNextTaskPoint,
       findNextElement,
       goNextLesson,
+      tryTeacherAjaxNativeTask,
       tryNativeNextStep,
       scoreTaskElement,
     };
@@ -160,6 +169,9 @@
       }
       if (isTopWindow() && data.type === MESSAGE_VIDEO_STATUS) {
         updatePanelStatus(data);
+      }
+      if (isTopWindow() && data.type === "CXVH_TOAST") {
+        showToast(data.message || "", data.toastType || "info");
       }
     });
   }
@@ -337,6 +349,7 @@
         navigationInProgress = false;
         setPanelMessage(`未找到下一任务点，已尝试 ${attempt} 次。`);
         notify("未找到下一任务点", "视频已结束，但页面上没有找到可点击的下一节或未完成任务点。");
+        showToast("未找到下一任务点，请点“立即跳转”或打开调试后反馈页面结构。", "warn");
         return;
       }
       setPanelMessage(`等待任务点刷新...第 ${attempt}/${maxAttempts} 次`);
@@ -351,13 +364,17 @@
     if (settings.navigationMode !== "button-only") {
       const nativeNext = tryNativeNextStep();
       if (nativeNext.clicked) {
-        return nativeNext;
+        return announceNavigation(nativeNext);
       }
 
       const teacherAjaxTask = findNextTeacherAjaxTask();
       if (teacherAjaxTask) {
+        const nativeTeacherAjax = tryTeacherAjaxNativeTask(teacherAjaxTask);
+        if (nativeTeacherAjax.clicked) {
+          return announceNavigation(nativeTeacherAjax);
+        }
         clickElement(teacherAjaxTask.clickTarget || teacherAjaxTask.element);
-        return { clicked: true, message: "已按章节未完成数跳转到下一个任务点。" };
+        return announceNavigation({ clicked: true, message: "已按章节未完成数跳转到下一个任务点。" });
       }
     }
 
@@ -365,7 +382,7 @@
       const direct = findNextElement(document);
       if (direct) {
         clickElement(direct);
-        return { clicked: true, message: "已点击页面上的下一节按钮。" };
+        return announceNavigation({ clicked: true, message: "已点击页面上的下一节按钮。" });
       }
     }
 
@@ -373,19 +390,19 @@
       const nextTask = findNextTaskPoint();
       if (nextTask) {
         clickElement(nextTask.clickTarget || nextTask.element);
-        return {
+        return announceNavigation({
           clicked: true,
           message: nextTask.unfinished
             ? "已跳转到下一个未完成任务点。"
             : "已跳转到下一个任务点。",
-        };
+        });
       }
     }
 
     const direct = settings.navigationMode === "task-only" ? null : findNextElement(document);
     if (direct) {
       clickElement(direct);
-      return { clicked: true, message: "已点击页面上的下一节按钮。" };
+      return announceNavigation({ clicked: true, message: "已点击页面上的下一节按钮。" });
     }
 
     const frames = Array.from(document.querySelectorAll("iframe, frame"));
@@ -395,13 +412,22 @@
         const element = findNextElement(doc);
         if (element) {
           clickElement(element);
-          return { clicked: true, message: "已点击框架内的下一节按钮。" };
+          return announceNavigation({ clicked: true, message: "已点击框架内的下一节按钮。" });
         }
       } catch (_error) {
         continue;
       }
     }
     return { clicked: false, message: "未找到下一任务点。" };
+  }
+
+  function announceNavigation(result) {
+    if (result && result.clicked) {
+      const message = result.message || "已尝试跳转到下一个任务点。";
+      notify("学习通视频助手", message);
+      showToast(message, "success");
+    }
+    return result;
   }
 
   function findNextTeacherAjaxTask() {
@@ -451,6 +477,7 @@
         locked: LOCKED_TASK_RE.test(haystack),
         unsafe: SAFE_SKIP_TASK_RE.test(text),
         chapterId: parseTeacherAjaxChapterId(link.getAttribute("onclick") || ""),
+        teacherAjaxArgs: parseTeacherAjaxArgs(link.getAttribute("onclick") || ""),
         text,
       });
     }
@@ -459,8 +486,29 @@
   }
 
   function parseTeacherAjaxChapterId(onclick) {
-    const match = String(onclick || "").match(/getTeacherAjax\s*\(\s*['"][^'"]*['"]\s*,\s*['"][^'"]*['"]\s*,\s*['"]([^'"]+)['"]/);
-    return match ? match[1] : "";
+    return parseTeacherAjaxArgs(onclick)[2] || "";
+  }
+
+  function parseTeacherAjaxArgs(onclick) {
+    const match = String(onclick || "").match(/getTeacherAjax\s*\(\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]\s*,\s*['"]([^'"]*)['"]/);
+    return match ? [match[1], match[2], match[3]] : [];
+  }
+
+  function tryTeacherAjaxNativeTask(task) {
+    if (!task || !task.teacherAjaxArgs || task.teacherAjaxArgs.length < 3) {
+      return { clicked: false };
+    }
+    const pageWindow = getPageWindow();
+    try {
+      if (!pageWindow || typeof pageWindow.getTeacherAjax !== "function") {
+        return { clicked: false };
+      }
+      pageWindow.getTeacherAjax(task.teacherAjaxArgs[0], task.teacherAjaxArgs[1], task.teacherAjaxArgs[2]);
+      return { clicked: true, message: `已调用学习通原生章节跳转：${task.chapterId || "下一任务点"}` };
+    } catch (error) {
+      debug("native getTeacherAjax failed", error);
+      return { clicked: false };
+    }
   }
 
   function tryNativeNextStep() {
@@ -853,6 +901,10 @@
     if (target.dataset.action === "next-now") {
       const result = goNextLesson();
       setPanelMessage(result.message || (result.clicked ? "已尝试跳转。" : "未找到下一任务点。"));
+      if (!result.clicked) {
+        notify("学习通视频助手", result.message || "未找到下一任务点。");
+        showToast(result.message || "未找到下一任务点。", "warn");
+      }
       return;
     }
     if (target.dataset.speed) {
@@ -1112,8 +1164,41 @@
 
   function notify(title, text) {
     if (typeof GM_notification === "function") {
-      GM_notification({ title, text, timeout: 4000, silent: true });
+      GM_notification({ title, text, timeout: 5000, silent: false });
     }
+  }
+
+  function showToast(message, type = "info") {
+    if (!isTopWindow()) {
+      postToTop({ type: "CXVH_TOAST", message, toastType: type });
+      return;
+    }
+    const old = document.querySelector(`#${APP_ID}-toast`);
+    if (old) {
+      old.remove();
+    }
+    const toast = document.createElement("div");
+    toast.id = `${APP_ID}-toast`;
+    toast.textContent = message;
+    toast.style.cssText = [
+      "position:fixed",
+      "right:18px",
+      "bottom:310px",
+      "z-index:2147483647",
+      "max-width:320px",
+      "padding:10px 12px",
+      "border-radius:6px",
+      "box-shadow:0 12px 30px rgba(15,23,42,.22)",
+      "font:14px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif",
+      "color:#fff",
+      `background:${type === "warn" ? "#d97706" : type === "success" ? "#2563eb" : "#334155"}`,
+    ].join(";");
+    document.documentElement.appendChild(toast);
+    window.setTimeout(() => {
+      if (toast.parentElement) {
+        toast.remove();
+      }
+    }, 4500);
   }
 
   function debug(...args) {
