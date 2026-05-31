@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.1.4
+// @version      0.1.5
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -493,7 +493,7 @@
     }
 
     const tabs = safeQueryAll(pageDocument, "#prev_tab .prev_ul li, .prev_ul li");
-    const tabCount = String(Math.max(1, tabs.length));
+    const tabCount = String(tabs.length);
     const activeChapter = pageDocument.querySelector(".posCatalog_active");
     if (activeChapter && activeChapter.scrollIntoView) {
       activeChapter.scrollIntoView({ block: "center", inline: "nearest" });
@@ -810,6 +810,7 @@
         <button type="button" data-speed="1.5">1.5x</button>
         <button type="button" data-speed="2">2x</button>
       </div>
+      <button type="button" class="${APP_ID}-manual-next" data-action="next-now">立即跳转</button>
       <div class="${APP_ID}-status" data-role="status">等待视频...</div>
     `;
     panel.onchange = onPanelChange;
@@ -847,6 +848,11 @@
       settings.showPanel = false;
       saveSettings(settings);
       renderPanel();
+      return;
+    }
+    if (target.dataset.action === "next-now") {
+      const result = goNextLesson();
+      setPanelMessage(result.message || (result.clicked ? "已尝试跳转。" : "未找到下一任务点。"));
       return;
     }
     if (target.dataset.speed) {
@@ -946,6 +952,16 @@
         border: 1px solid #cbd5e1;
         border-radius: 4px;
         background: #f8fafc;
+        cursor: pointer;
+      }
+      #${APP_ID}-panel .${APP_ID}-manual-next {
+        width: 100%;
+        margin-top: 8px;
+        padding: 6px 0;
+        border: 1px solid #2563eb;
+        border-radius: 4px;
+        background: #eff6ff;
+        color: #1d4ed8;
         cursor: pointer;
       }
       #${APP_ID}-panel .${APP_ID}-status {

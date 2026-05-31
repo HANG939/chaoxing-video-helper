@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+
+- Matched OCS-style `PCount.next(...)` tab-count behavior more closely.
+- Added an `立即跳转` panel button so users can test the current page's next-task navigation immediately.
+
 ## 0.1.4
 
 - Changed smart navigation priority to use Chaoxing native next-step handling before DOM button clicks.

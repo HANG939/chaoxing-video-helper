@@ -340,7 +340,7 @@ if (!nativeNavigation.clicked || !sandbox.nativeNextArgs) {
   throw new Error("Expected native PCount.next navigation to run when Chaoxing page APIs are present");
 }
 
-const expectedNativeArgs = ["1", "chapter-100", "course-100", "clazz-100", ""];
+const expectedNativeArgs = ["0", "chapter-100", "course-100", "clazz-100", ""];
 if (JSON.stringify(sandbox.nativeNextArgs) !== JSON.stringify(expectedNativeArgs)) {
   throw new Error(`Unexpected PCount.next arguments: ${JSON.stringify(sandbox.nativeNextArgs)}`);
 }

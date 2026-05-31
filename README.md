@@ -45,6 +45,7 @@ The script shows a small panel in the lower-right corner:
 - `跳转延迟`: wait a few seconds before clicking the next lesson.
 - `跳转模式`: use `智能` by default. `任务点` only uses the chapter/task list, and `按钮` only clicks visible next buttons.
 - `重试次数`: how many times to re-check the page after a video ends.
+- `立即跳转`: test the current page's next-task navigation immediately.
 
 Settings are saved by your userscript manager.
 
