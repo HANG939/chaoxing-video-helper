@@ -31,6 +31,10 @@ Use this checklist before a release.
 - Set the jump delay to `2` seconds.
 - Test near the end of a video.
 - Confirm the script clicks a visible next-lesson entry.
+- Set `跳转模式` to `智能`.
+- Test a page where the standard next button is not visible.
+- Confirm the script scrolls to the course chapter list and opens the next unfinished task point.
+- Confirm the script waits and retries if the page needs a few seconds to refresh task completion state.
 - If no next lesson is available, confirm the panel shows a clear message.
 
 ## Safety

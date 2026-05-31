@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.1.0
+// @version      0.1.1
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -36,6 +36,9 @@
     speed: 1.5,
     skipMutedAutoplayBlock: true,
     nextDelaySeconds: 2,
+    navigationMode: "smart",
+    maxNextRetries: 8,
+    retryIntervalSeconds: 2,
     showPanel: true,
     debug: false,
   };
@@ -44,6 +47,33 @@
   const SAFE_TEXT_RE = /(chaoxing|xueyinonline|mooc1|学习通|学银在线|超星)/i;
   const POSITIVE_NEXT_RE = /(下一[章节课讲页]?|下一个|继续学习|继续播放|下一步|next)/i;
   const NEGATIVE_NEXT_RE = /(上一|上一个|返回|目录|作业|测验|考试|签到|讨论|笔记|资料|下载|关闭|取消|prev|previous)/i;
+  const TASK_SELECTOR = [
+    "[onclick^='getTeacherAjax']",
+    "[onclick*='getTeacherAjax']",
+    ".posCatalog_select",
+    ".posCatalog_active",
+    ".posCatalog_name",
+    ".catalog_points_yi",
+    ".catalog_points_we",
+    ".chapterText",
+    ".chapter_item",
+    ".chapterItem",
+    ".chapter-item",
+    ".course_section",
+    ".course-item",
+    "[class*='chapter']",
+    "[class*='catalog']",
+    "[class*='knowledge']",
+    "a[href*='knowledge']",
+    "a[href*='studentstudy']",
+    "a[href*='mycourse']",
+  ].join(",");
+  const CURRENT_TASK_RE = /(posCatalog_active|active|current|cur|selected|playing|正在|当前)/i;
+  const FINISHED_TASK_RE = /(icon_Completed|completed|complete|finished|finish|done|passed|pass|已完成|完成|已学|green)/i;
+  const UNFINISHED_TASK_RE = /(jobUnfinishCount|unfinished|unfinish|notDone|todo|orange|red|未完成|待完成|未学|任务点)/i;
+  const LOCKED_TASK_RE = /(lock|locked|disabled|disable|catalog_points_sa|catalog_points_er|未开放|不可用|闯关|解锁|限制)/i;
+  const SAFE_SKIP_TASK_RE = /(考试|测验|章节测试|作业|签到|人脸|验证码|答题|quiz|exam|homework|captcha|face)/i;
+  const TEST_MODE = Boolean(window.__CXVH_TEST_MODE__);
 
   let settings = loadSettings();
   let panel = null;
@@ -73,8 +103,20 @@
   if (isTopWindow()) {
     installTopController();
   }
+  if (TEST_MODE) {
+    window.__CXVH_TEST__ = {
+      collectTaskCandidates,
+      findNextTaskPoint,
+      findNextElement,
+      goNextLesson,
+      scoreTaskElement,
+    };
+  }
 
   function shouldActivate() {
+    if (TEST_MODE) {
+      return true;
+    }
     const host = location.hostname || "";
     if (SAFE_HOST_RE.test(host)) {
       return true;
@@ -274,25 +316,60 @@
       return;
     }
     navigationInProgress = true;
-    setPanelMessage("视频已结束，准备进入下一节...");
+    setPanelMessage("视频已结束，等待任务点状态刷新...");
     const delay = Math.max(0, Number(settings.nextDelaySeconds) || 0) * 1000;
-    window.setTimeout(() => {
-      const clicked = goNextLesson();
-      navigationInProgress = false;
-      if (!clicked) {
-        setPanelMessage("未找到下一节按钮，请手动点击下一节。");
-        notify("未找到下一节", "视频已结束，但页面上没有找到可点击的下一节入口。");
+    const maxAttempts = Math.max(1, Math.min(20, Number(settings.maxNextRetries) || DEFAULT_SETTINGS.maxNextRetries));
+    const retryMs = Math.max(500, Math.min(10000, Number(settings.retryIntervalSeconds) * 1000 || 2000));
+    let attempt = 0;
+
+    const tryNext = () => {
+      attempt += 1;
+      const result = goNextLesson();
+      if (result.clicked) {
+        navigationInProgress = false;
+        setPanelMessage(result.message || "已进入下一节。");
+        return;
       }
-    }, delay);
+      if (attempt >= maxAttempts) {
+        navigationInProgress = false;
+        setPanelMessage(`未找到下一任务点，已尝试 ${attempt} 次。`);
+        notify("未找到下一任务点", "视频已结束，但页面上没有找到可点击的下一节或未完成任务点。");
+        return;
+      }
+      setPanelMessage(`等待任务点刷新...第 ${attempt}/${maxAttempts} 次`);
+      window.setTimeout(tryNext, retryMs);
+    };
+
+    window.setTimeout(tryNext, delay);
     debug("video ended", data);
   }
 
   function goNextLesson() {
-    const direct = findNextElement(document);
+    if (settings.navigationMode !== "task-only") {
+      const direct = findNextElement(document);
+      if (direct) {
+        clickElement(direct);
+        return { clicked: true, message: "已点击页面上的下一节按钮。" };
+      }
+    }
+
+    if (settings.navigationMode !== "button-only") {
+      const nextTask = findNextTaskPoint();
+      if (nextTask) {
+        clickElement(nextTask.clickTarget || nextTask.element);
+        return {
+          clicked: true,
+          message: nextTask.unfinished
+            ? "已跳转到下一个未完成任务点。"
+            : "已跳转到下一个任务点。",
+        };
+      }
+    }
+
+    const direct = settings.navigationMode === "task-only" ? null : findNextElement(document);
     if (direct) {
       clickElement(direct);
-      setPanelMessage("已点击下一节。");
-      return true;
+      return { clicked: true, message: "已点击页面上的下一节按钮。" };
     }
 
     const frames = Array.from(document.querySelectorAll("iframe, frame"));
@@ -302,14 +379,13 @@
         const element = findNextElement(doc);
         if (element) {
           clickElement(element);
-          setPanelMessage("已点击下一节。");
-          return true;
+          return { clicked: true, message: "已点击框架内的下一节按钮。" };
         }
       } catch (_error) {
         continue;
       }
     }
-    return false;
+    return { clicked: false, message: "未找到下一任务点。" };
   }
 
   function findNextElement(root) {
@@ -340,6 +416,156 @@
     return scored[0] ? scored[0].element : null;
   }
 
+  function findNextTaskPoint() {
+    const roots = getSearchRoots();
+    const candidates = roots.flatMap((root) => collectTaskCandidates(root));
+    if (!candidates.length) {
+      return null;
+    }
+
+    const currentIndex = candidates.findIndex((item) => item.current);
+    const afterCurrent = currentIndex >= 0 ? candidates.slice(currentIndex + 1) : candidates;
+
+    const nextUnfinished = afterCurrent.find((item) => item.unfinished && item.score > 0);
+    if (nextUnfinished) {
+      return nextUnfinished;
+    }
+
+    const firstUnfinished = candidates.find((item) => item.unfinished && !item.current && item.score > 0);
+    if (firstUnfinished) {
+      return firstUnfinished;
+    }
+
+    const sequential = afterCurrent.find((item) => item.score > 0);
+    if (sequential) {
+      return sequential;
+    }
+
+    return null;
+  }
+
+  function collectTaskCandidates(root) {
+    const doc = root.nodeType === 9 ? root : root.ownerDocument || document;
+    const elements = safeQueryAll(doc, TASK_SELECTOR);
+    const seen = new Set();
+    const candidates = [];
+
+    for (const element of elements) {
+      const container = closestTaskContainer(element);
+      const keyElement = container || element;
+      if (seen.has(keyElement)) {
+        continue;
+      }
+      seen.add(keyElement);
+
+      const item = scoreTaskElement(keyElement);
+      if (item.score > 0) {
+        candidates.push(item);
+      }
+    }
+
+    return candidates;
+  }
+
+  function scoreTaskElement(element) {
+    const clickTarget = findTaskClickTarget(element);
+    const text = getElementText(element);
+    const meta = getElementMeta(element);
+    const haystack = `${text} ${meta}`;
+    const unfinishCount = readUnfinishCount(element);
+    const current = CURRENT_TASK_RE.test(meta);
+    const hasUnfinishedMarker = UNFINISHED_TASK_RE.test(haystack);
+    const finished = unfinishCount === 0 || (!hasUnfinishedMarker && FINISHED_TASK_RE.test(haystack)) || Boolean(element.querySelector(".icon_Completed"));
+    const unfinished = unfinishCount > 0 || (hasUnfinishedMarker && !finished);
+    const locked = LOCKED_TASK_RE.test(haystack);
+    const unsafe = SAFE_SKIP_TASK_RE.test(text);
+
+    let score = 0;
+    if (clickTarget) score += 40;
+    if (/getTeacherAjax|knowledge|studentstudy|mycourse/i.test(haystack)) score += 45;
+    if (/posCatalog|chapter|catalog|knowledge/i.test(meta)) score += 35;
+    if (unfinished) score += 80;
+    if (current) score += 10;
+    if (finished && !current) score -= 35;
+    if (locked || unsafe) score = 0;
+    if (text.length > 180 && !/posCatalog|chapter/i.test(meta)) score -= 30;
+
+    return {
+      element,
+      clickTarget,
+      score,
+      current,
+      finished,
+      unfinished,
+      unfinishCount,
+      text,
+    };
+  }
+
+  function closestTaskContainer(element) {
+    const selector = ".posCatalog_select,.posCatalog_active,li,.chapter_item,.chapterItem,.chapter-item,.course_section,.course-item,[class*='chapter'],[class*='catalog']";
+    try {
+      return element.closest(selector) || element;
+    } catch (_error) {
+      return element;
+    }
+  }
+
+  function findTaskClickTarget(element) {
+    const selectors = [
+      ".posCatalog_name",
+      "[onclick^='getTeacherAjax']",
+      "[onclick*='getTeacherAjax']",
+      "a[href*='knowledge']",
+      "a[href*='studentstudy']",
+      "a[href*='mycourse']",
+      "a",
+      "button",
+      "[role='button']",
+      "[onclick]",
+    ];
+    if (matchesAny(element, selectors) && isOperable(element)) {
+      return element;
+    }
+    const target = safeQueryAll(element, selectors.join(",")).find(isOperable);
+    return target || null;
+  }
+
+  function readUnfinishCount(element) {
+    const targets = [element];
+    if (matchesAny(element, ["[onclick^='getTeacherAjax']", "[onclick*='getTeacherAjax']", ".posCatalog_name"])) {
+      targets.push(element.parentElement);
+    }
+    for (const target of targets) {
+      if (!target) {
+        continue;
+      }
+      const input = target.querySelector && target.querySelector(".jobUnfinishCount");
+      if (input) {
+        const value = parseInt(input.value || input.getAttribute("value") || "0", 10);
+        if (Number.isFinite(value)) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  function getSearchRoots() {
+    const roots = [document];
+    for (const frame of Array.from(document.querySelectorAll("iframe, frame"))) {
+      try {
+        const doc = frame.contentDocument || frame.contentWindow.document;
+        if (doc) {
+          roots.push(doc);
+        }
+      } catch (_error) {
+        continue;
+      }
+    }
+    return roots;
+  }
+
   function scoreNextElement(element) {
     const text = getElementText(element);
     const classAndId = `${element.id || ""} ${element.className || ""} ${element.getAttribute("title") || ""} ${element.getAttribute("aria-label") || ""}`;
@@ -365,11 +591,19 @@
   }
 
   function isClickable(element) {
+    if (!isOperable(element)) {
+      return false;
+    }
     const rect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
     if (rect.width <= 0 || rect.height <= 0) {
       return false;
     }
+    return true;
+  }
+
+  function isOperable(element) {
+    const view = element.ownerDocument && element.ownerDocument.defaultView ? element.ownerDocument.defaultView : window;
+    const style = view.getComputedStyle ? view.getComputedStyle(element) : getComputedStyle(element);
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
       return false;
     }
@@ -399,7 +633,9 @@
   }
 
   function clickElement(element) {
-    element.scrollIntoView({ block: "center", inline: "center" });
+    if (element.scrollIntoView) {
+      element.scrollIntoView({ block: "center", inline: "center" });
+    }
     element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
     element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
@@ -437,6 +673,16 @@
         <input type="number" data-setting="nextDelaySeconds" min="0" max="30" step="1" value="${settings.nextDelaySeconds}">
         <span>秒</span>
       </label>
+      <label class="${APP_ID}-speed">跳转模式
+        <select data-setting="navigationMode">
+          <option value="smart" ${settings.navigationMode === "smart" ? "selected" : ""}>智能</option>
+          <option value="task-only" ${settings.navigationMode === "task-only" ? "selected" : ""}>任务点</option>
+          <option value="button-only" ${settings.navigationMode === "button-only" ? "selected" : ""}>按钮</option>
+        </select>
+      </label>
+      <label class="${APP_ID}-speed">重试次数
+        <input type="number" data-setting="maxNextRetries" min="1" max="20" step="1" value="${settings.maxNextRetries}">
+      </label>
       <div class="${APP_ID}-buttons">
         <button type="button" data-speed="1">1x</button>
         <button type="button" data-speed="1.25">1.25x</button>
@@ -445,8 +691,8 @@
       </div>
       <div class="${APP_ID}-status" data-role="status">等待视频...</div>
     `;
-    panel.addEventListener("change", onPanelChange);
-    panel.addEventListener("click", onPanelClick);
+    panel.onchange = onPanelChange;
+    panel.onclick = onPanelClick;
   }
 
   function onPanelChange(event) {
@@ -461,6 +707,10 @@
       settings.speed = clampSpeed(target.value);
     } else if (key === "nextDelaySeconds") {
       settings.nextDelaySeconds = Math.max(0, Math.min(30, Number(target.value) || 0));
+    } else if (key === "maxNextRetries") {
+      settings.maxNextRetries = Math.max(1, Math.min(20, Number(target.value) || DEFAULT_SETTINGS.maxNextRetries));
+    } else if (key === "navigationMode") {
+      settings.navigationMode = ["smart", "task-only", "button-only"].includes(target.value) ? target.value : "smart";
     }
     saveSettings(settings);
     broadcastSettings();
@@ -554,6 +804,13 @@
         border: 1px solid #cbd5e1;
         border-radius: 4px;
       }
+      #${APP_ID}-panel select {
+        width: 92px;
+        padding: 4px 6px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        background: #fff;
+      }
       #${APP_ID}-panel .${APP_ID}-speed {
         justify-content: space-between;
       }
@@ -615,6 +872,9 @@
       speed: clampSpeed(value.speed),
       skipMutedAutoplayBlock: value.skipMutedAutoplayBlock !== false,
       nextDelaySeconds: Math.max(0, Math.min(30, Number(value.nextDelaySeconds) || DEFAULT_SETTINGS.nextDelaySeconds)),
+      navigationMode: ["smart", "task-only", "button-only"].includes(value.navigationMode) ? value.navigationMode : "smart",
+      maxNextRetries: Math.max(1, Math.min(20, Number(value.maxNextRetries) || DEFAULT_SETTINGS.maxNextRetries)),
+      retryIntervalSeconds: Math.max(0.5, Math.min(10, Number(value.retryIntervalSeconds) || DEFAULT_SETTINGS.retryIntervalSeconds)),
       showPanel: value.showPanel !== false,
       debug: value.debug === true,
     };
@@ -653,6 +913,41 @@
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function getElementMeta(element) {
+    const attrs = ["id", "class", "className", "title", "aria-label", "href", "onclick", "value"];
+    const own = attrs.map((name) => {
+      if (name === "className") {
+        return element.className || "";
+      }
+      return element.getAttribute ? element.getAttribute(name) || "" : "";
+    });
+    const childMeta = safeQueryAll(element, "[class],[id],[title],[onclick],input[value]")
+      .slice(0, 20)
+      .map((item) => `${item.id || ""} ${item.className || ""} ${item.getAttribute("title") || ""} ${item.getAttribute("onclick") || ""} ${item.value || item.getAttribute("value") || ""}`);
+    return own.concat(childMeta).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  function safeQueryAll(root, selector) {
+    try {
+      return Array.from(root.querySelectorAll(selector));
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function matchesAny(element, selectors) {
+    if (!element.matches) {
+      return false;
+    }
+    return selectors.some((selector) => {
+      try {
+        return element.matches(selector);
+      } catch (_error) {
+        return false;
+      }
+    });
   }
 
   function formatTime(seconds) {

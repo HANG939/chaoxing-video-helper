@@ -10,6 +10,8 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - Playback speed control from `0.5x` to `4x`.
 - Auto play the current course video when the page is ready.
 - Auto move to the next lesson after the current video ends.
+- Smart task-point navigation: when a normal "next" button is not available, the script scans the Chaoxing chapter list and prefers the next unfinished task point.
+- Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
 - Works inside many Chaoxing iframe video pages by running in embedded frames.
 - Supports Tampermonkey and ScriptCat.
@@ -35,6 +37,8 @@ The script shows a small panel in the lower-right corner:
 - `视频结束后下一节`: after the current video finishes, click the next lesson entry if one is visible.
 - `倍速`: set the playback speed.
 - `跳转延迟`: wait a few seconds before clicking the next lesson.
+- `跳转模式`: use `智能` by default. `任务点` only uses the chapter/task list, and `按钮` only clicks visible next buttons.
+- `重试次数`: how many times to re-check the page after a video ends.
 
 Settings are saved by your userscript manager.
 
@@ -53,6 +57,7 @@ The userscript uses a broad `@match *://*/*` rule because Chaoxing course videos
 This project is only a playback convenience tool. It does not:
 
 - answer quizzes or exams
+- complete assignments, tests, or sign-ins
 - bypass captchas
 - bypass sign-in or attendance checks
 - fake learning progress

@@ -32,6 +32,8 @@ class FakeElement {
   constructor(tagName = "div") {
     this.tagName = tagName.toUpperCase();
     this.children = [];
+    this.parentElement = null;
+    this.attributes = {};
     this.dataset = {};
     this.style = {};
     this.id = "";
@@ -44,6 +46,8 @@ class FakeElement {
   }
 
   appendChild(child) {
+    child.parentElement = this;
+    child.ownerDocument = this.ownerDocument;
     this.children.push(child);
     return child;
   }
@@ -52,12 +56,60 @@ class FakeElement {
 
   addEventListener() {}
 
-  querySelector() {
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
+
+  querySelectorAll(selector) {
+    const selectors = selector.split(",").map((item) => item.trim()).filter(Boolean);
+    const result = [];
+    const visit = (element) => {
+      for (const child of element.children) {
+        if (selectors.some((item) => child.matches(item))) {
+          result.push(child);
+        }
+        visit(child);
+      }
+    };
+    visit(this);
+    return result;
+  }
+
+  matches(selector) {
+    if (selector === "video") return this.tagName === "VIDEO";
+    if (selector === "a") return this.tagName === "A";
+    if (selector === "button") return this.tagName === "BUTTON";
+    if (selector === "[onclick]") return Boolean(String(this.getAttribute("onclick") || ""));
+    if (selector === "[role='button']") return this.getAttribute("role") === "button";
+    if (selector === "[onclick^='getTeacherAjax']") return String(this.getAttribute("onclick") || "").startsWith("getTeacherAjax");
+    if (selector === "[onclick*='getTeacherAjax']") return String(this.getAttribute("onclick") || "").includes("getTeacherAjax");
+    if (selector === "input[value]") return this.tagName === "INPUT" && Boolean(this.value || this.getAttribute("value"));
+    if (/^\.[\w-]+$/.test(selector)) return this.className.split(/\s+/).includes(selector.slice(1));
+    if (/^#[\w-]+$/.test(selector)) return this.id === selector.slice(1);
+    if (/^\[class\*='([^']+)'\]$/.test(selector)) return this.className.includes(selector.match(/^\[class\*='([^']+)'\]$/)[1]);
+    if (/^\[href\*='([^']+)'\]$/.test(selector)) return this.getAttribute("href").includes(selector.match(/^\[href\*='([^']+)'\]$/)[1]);
+    if (selector === "[class]") return Boolean(this.className);
+    if (selector === "[id]") return Boolean(this.id);
+    if (selector === "[title]") return Boolean(this.getAttribute("title"));
+    return false;
+  }
+
+  closest(selector) {
+    let current = this;
+    const selectors = selector.split(",").map((item) => item.trim()).filter(Boolean);
+    while (current) {
+      if (selectors.some((item) => current.matches(item))) {
+        return current;
+      }
+      current = current.parentElement;
+    }
     return null;
   }
 
-  querySelectorAll() {
-    return [];
+  get classList() {
+    return {
+      contains: (name) => this.className.split(/\s+/).includes(name),
+    };
   }
 
   getBoundingClientRect() {
@@ -65,11 +117,15 @@ class FakeElement {
   }
 
   getAttribute(name) {
-    return this[name] || "";
+    if (name === "class") return this.className || "";
+    if (name === "value") return this.value || this.attributes.value || "";
+    return this.attributes[name] || this[name] || "";
   }
 
   setAttribute(name, value) {
-    this[name] = value;
+    if (name === "class") this.className = value;
+    else if (name === "value") this.value = value;
+    else this.attributes[name] = value;
   }
 
   scrollIntoView() {}
@@ -103,21 +159,57 @@ class FakeVideo extends FakeElement {
 
 const fakeVideo = new FakeVideo();
 const documentElement = new FakeElement("html");
+const taskList = new FakeElement("ul");
+const currentTask = new FakeElement("li");
+currentTask.className = "posCatalog_select posCatalog_active";
+currentTask.textContent = "1.1 当前视频";
+const currentLink = new FakeElement("a");
+currentLink.className = "posCatalog_name";
+currentLink.setAttribute("onclick", "getTeacherAjax('course','clazz','chapter-1')");
+currentTask.appendChild(currentLink);
+const nextTask = new FakeElement("li");
+nextTask.className = "posCatalog_select";
+nextTask.textContent = "1.2 下一个视频 未完成";
+const nextInput = new FakeElement("input");
+nextInput.className = "jobUnfinishCount";
+nextInput.value = "1";
+const nextLink = new FakeElement("a");
+nextLink.className = "posCatalog_name";
+nextLink.setAttribute("onclick", "getTeacherAjax('course','clazz','chapter-2')");
+nextTask.appendChild(nextInput);
+nextTask.appendChild(nextLink);
+taskList.appendChild(currentTask);
+taskList.appendChild(nextTask);
+documentElement.appendChild(taskList);
 const document = {
   title: "Chaoxing test page",
   referrer: "",
   documentElement,
   body: documentElement,
   head: documentElement,
-  createElement: (tag) => new FakeElement(tag),
+  nodeType: 9,
+  createElement: (tag) => {
+    const element = new FakeElement(tag);
+    element.ownerDocument = document;
+    return element;
+  },
   querySelectorAll: (selector) => {
     if (selector === "video") return [fakeVideo];
     if (selector.includes("iframe") || selector.includes("frame")) return [];
-    return [];
+    return documentElement.querySelectorAll(selector);
   },
+  querySelector: (selector) => document.querySelectorAll(selector)[0] || null,
 };
+documentElement.ownerDocument = document;
+for (const element of [fakeVideo, taskList, currentTask, currentLink, nextTask, nextInput, nextLink]) {
+  element.ownerDocument = document;
+}
 
 const timers = [];
+if (document.querySelectorAll(".posCatalog_select").length !== 2) {
+  throw new Error("Fake DOM setup failed: expected two task items");
+}
+
 const sandbox = {
   console,
   document,
@@ -159,6 +251,7 @@ const sandbox = {
 };
 sandbox.window = {
   top: null,
+  __CXVH_TEST_MODE__: true,
   innerWidth: 1280,
   addEventListener: () => {},
   postMessage: () => {},
@@ -173,4 +266,41 @@ if (fakeVideo.playbackRate !== 1.5) {
   throw new Error(`Expected default playback speed 1.5, got ${fakeVideo.playbackRate}`);
 }
 
-console.log("Userscript metadata, syntax, and startup smoke test look good.");
+if (!sandbox.window.__CXVH_TEST__) {
+  throw new Error("Expected test helpers to be exposed in test mode");
+}
+
+const navigation = sandbox.window.__CXVH_TEST__.goNextLesson();
+if (!navigation.clicked || !nextLink.clicked) {
+  const candidates = sandbox.window.__CXVH_TEST__.collectTaskCandidates(document);
+  throw new Error(
+    `Expected smart navigation to click the next unfinished task point, got ${JSON.stringify({
+      navigation,
+      currentClicked: currentLink.clicked === true,
+      nextClicked: nextLink.clicked === true,
+      rawTaskMatches: document.querySelectorAll("[onclick^='getTeacherAjax'],[onclick*='getTeacherAjax'],.posCatalog_select,.posCatalog_active,.posCatalog_name").length,
+      directScores: [currentTask, nextTask].map((element) => {
+        const item = sandbox.window.__CXVH_TEST__.scoreTaskElement(element);
+        return {
+          text: item.text,
+          score: item.score,
+          current: item.current,
+          unfinished: item.unfinished,
+          finished: item.finished,
+          unfinishCount: item.unfinishCount,
+          hasClickTarget: Boolean(item.clickTarget),
+        };
+      }),
+      candidates: candidates.map((item) => ({
+        text: item.text,
+        score: item.score,
+        current: item.current,
+        unfinished: item.unfinished,
+        finished: item.finished,
+        unfinishCount: item.unfinishCount,
+      })),
+    })}`
+  );
+}
+
+console.log("Userscript metadata, syntax, startup, and task navigation smoke tests look good.");
