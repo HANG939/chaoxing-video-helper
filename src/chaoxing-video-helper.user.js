@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.7
+// @version      0.2.8
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -237,11 +237,6 @@
   function installTopController() {
     addPanelStyle();
     renderPanel();
-    window.setInterval(() => {
-      if (settings.enabled && settings.autoPlay) {
-        clickVisiblePlayButton();
-      }
-    }, 2500);
     window.setInterval(monitorTaskCompletion, 2000);
   }
 
@@ -1216,9 +1211,6 @@
     if (options.scroll && element.scrollIntoView) {
       element.scrollIntoView({ block: "center", inline: "center" });
     }
-    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
-    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
     element.click();
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "chaoxing-video-helper",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "private": true,
   "description": "Tampermonkey/ScriptCat userscript for Chaoxing video playback assistance.",
   "scripts": {

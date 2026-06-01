@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.8
+
+- Removed the automatic interval that repeatedly clicked visible play buttons; autoplay now relies on the media element's `play()` path.
+- Changed helper clicks to direct `element.click()` only, without synthetic mouseover/mousedown/mouseup events, to reduce suspicious operation detection.
+- Expanded validation so automatic navigation must not scroll or dispatch synthetic mouse events.
+
 ## 0.2.7
 
 - Disabled `scrollIntoView` for automatic playback and automatic task navigation to prevent suspicious up/down page jumping when a chapter has multiple video task points.

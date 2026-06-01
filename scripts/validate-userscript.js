@@ -160,7 +160,10 @@ class FakeElement {
     this.scrolled = (this.scrolled || 0) + 1;
   }
 
-  dispatchEvent() {}
+  dispatchEvent(event) {
+    this.dispatchedEvents = this.dispatchedEvents || [];
+    this.dispatchedEvents.push(event && event.type ? event.type : "event");
+  }
 
   click() {
     this.clicked = true;
@@ -413,14 +416,16 @@ if (!prioritizedNavigation.clicked || sandbox.nativeNextArgs || !nextLink.clicke
 
 nextLink.clicked = false;
 nextLink.scrolled = 0;
+nextLink.dispatchedEvents = [];
 sandbox.nativeNextArgs = null;
 const autoOrderedNavigation = sandbox.window.__CXVH_TEST__.goNextLesson({ auto: true });
-if (!autoOrderedNavigation.clicked || sandbox.nativeNextArgs || !nextLink.clicked || nextLink.scrolled) {
-  throw new Error(`Expected automatic ordered task navigation to click without scrollIntoView, got ${JSON.stringify({
+if (!autoOrderedNavigation.clicked || sandbox.nativeNextArgs || !nextLink.clicked || nextLink.scrolled || nextLink.dispatchedEvents.length) {
+  throw new Error(`Expected automatic ordered task navigation to click without scrollIntoView or synthetic mouse events, got ${JSON.stringify({
     autoOrderedNavigation,
     nativeNextArgs: sandbox.nativeNextArgs,
     nextLinkClicked: nextLink.clicked === true,
     nextLinkScrolled: nextLink.scrolled || 0,
+    dispatchedEvents: nextLink.dispatchedEvents,
   })}`);
 }
 
