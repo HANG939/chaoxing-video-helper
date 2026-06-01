@@ -9,12 +9,13 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 
 - Playback speed control from `0.5x` to `4x`.
 - Auto play the current course video when the page is ready.
-- Auto move to the next lesson after the current video ends.
+- Auto move to the next unfinished video task point after the current video task point is completed.
 - OCS-style task completion monitoring: the script checks Chaoxing task status and can advance when the current media task is marked complete, even if the video `ended` event is unreliable.
-- Smart task-point navigation: when a normal "next" button is not available, the script scans the Chaoxing chapter list and prefers the next unfinished task point.
-- Native Chaoxing navigation: when the course page exposes its built-in next-step API, the script uses that path before falling back to chapter-list or DOM clicks.
+- Smart task-point navigation: the script scans the Chaoxing chapter list and follows unfinished video task points in chapter order.
+- Native Chaoxing navigation: the script can call Chaoxing chapter entries directly, while automatic navigation avoids generic next-step buttons that may enter quizzes or unrelated content.
 - OCS-style chapter scanning: reads `getTeacherAjax` chapter entries and unfinished task counts before using generic page scanning.
 - Chapter quiz skipping: when a chapter test/task point is encountered, the helper ignores it and continues looking for the next video/task point.
+- Completion stop: after all video task points are complete, the helper notifies once and stops automatic navigation until the user manually resumes or clicks `立即跳转`.
 - Jump notifications: when the script attempts to move to the next task point, it shows a browser notification and an in-page toast at the top of the window.
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
@@ -46,13 +47,13 @@ The script shows an OCS-style console panel in the lower-right corner:
 
 - `启用`: turn the helper on or off.
 - `自动播放`: try to start the current video automatically.
-- `视频结束后下一节`: after the current video finishes, click the next lesson entry if one is visible.
+- `视频结束后下一节`: after the current video task point is complete, jump to the next unfinished video task point in chapter order.
 - `检测任务点完成`: monitor Chaoxing task status and jump after the current media/chapter task is complete.
 - `倍速`: set the playback speed.
 - `跳转延迟`: wait a few seconds before clicking the next lesson.
 - `跳转模式`: use `智能` by default. `任务点` only uses the chapter/task list, and `按钮` only clicks visible next buttons.
 - `重试次数`: how many times to re-check the page after a video ends.
-- `立即跳转`: test the current page's next-task navigation immediately.
+- `立即跳转`: manually restart/continue the ordered unfinished-video-task navigation.
 - `检测完成`: inspect whether the current page has explicit task-completion evidence.
 - `×`: hide the console into the circular Codex launcher, so it can be restored if it was closed by accident.
 - Runtime logs: show recent speed changes, completion checks, navigation attempts, and all-done notices.

@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.5
+// @version      0.2.6
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -52,6 +52,7 @@
     maxNextRetries: 8,
     retryIntervalSeconds: 2,
     completionCheck: true,
+    stoppedAfterCompletion: false,
     showPanel: true,
     panelMinimized: false,
     panelLeft: null,
@@ -121,7 +122,7 @@
   }
 
   debug("activated", location.href, { top: isTopWindow() });
-  runtime.state = settings.enabled ? "运行中" : "已暂停";
+  runtime.state = settings.stoppedAfterCompletion ? "已完成" : settings.enabled ? "运行中" : "已暂停";
   logEvent("脚本已启动，正在检测学习通任务点", "info");
 
   if (typeof GM_registerMenuCommand === "function") {
@@ -134,7 +135,8 @@
       renderPanel();
     });
     GM_registerMenuCommand("Test next task navigation", () => {
-      const result = goNextLesson();
+      clearCompletionStop();
+      const result = goNextLesson({ manual: true });
       setPanelMessage(result.message || (result.clicked ? "已尝试跳转。" : "未找到下一任务点。"));
       if (!result.clicked) {
         notify("学习通视频助手", result.message || "未找到下一任务点。");
@@ -152,6 +154,7 @@
     window.__CXVH_TEST__ = {
       collectTaskCandidates,
       findNextTeacherAjaxTask,
+      findNextUnfinishedVideoTask,
       findNextTaskPoint,
       findNextElement,
       getTaskCompletionState,
@@ -199,6 +202,7 @@
       }
       if (data.type === MESSAGE_SETTINGS_CHANGED) {
         settings = normalizeSettings(data.settings || settings);
+        runtime.state = settings.stoppedAfterCompletion ? "已完成" : settings.enabled ? "运行中" : "已暂停";
         applySettingsToVideo();
         renderPanel();
       }
@@ -402,7 +406,7 @@
   }
 
   function monitorTaskCompletion() {
-    if (!settings.enabled || !settings.autoNext || !settings.completionCheck || navigationInProgress) {
+    if (!settings.enabled || !settings.autoNext || !settings.completionCheck || settings.stoppedAfterCompletion || navigationInProgress) {
       return;
     }
     const now = Date.now();
@@ -426,7 +430,7 @@
       setPanelMessage(message);
       showToast(message, "info");
       logEvent(message, "info");
-      const result = goNextLesson({ skipNativeOnce: true });
+      const result = goNextLesson({ auto: true });
       if (result.done) {
         setPanelMessage(result.message || "全部视频任务点已完成。");
         return;
@@ -447,13 +451,7 @@
     lastCompletionJumpAt = now;
 
     if (state.allCompleted) {
-      const message = "全部视频任务点已完成。";
-      runtime.state = "已完成";
-      runtime.task = "全部视频任务点已完成";
-      setPanelMessage(message);
-      notify("学习通视频助手", message);
-      showToast(message, "success");
-      logEvent(message, "success");
+      markAllVideosCompleted();
       return;
     }
 
@@ -470,8 +468,8 @@
   function getTaskCompletionState() {
     const chapterInfos = getTeacherAjaxChapterInfos(document);
     const activeChapter = chapterInfos.find((item) => item.current);
-    const countedChapters = chapterInfos.filter((item) => item.hasUnfinishCount);
-    const allCompleted = countedChapters.length > 0 && countedChapters.every((item) => item.unfinishCount === 0);
+    const videoTasks = getVideoTaskItems(chapterInfos);
+    const allCompleted = videoTasks.length > 0 && videoTasks.every((item) => item.finished);
     if (activeChapter && activeChapter.hasUnfinishCount && activeChapter.unfinishCount === 0) {
       return {
         hasEvidence: true,
@@ -582,7 +580,7 @@
   }
 
   function handleVideoEnded(data) {
-    if (!settings.enabled || !settings.autoNext) {
+    if (!settings.enabled || !settings.autoNext || settings.stoppedAfterCompletion) {
       return;
     }
     if (navigationInProgress) {
@@ -597,7 +595,7 @@
 
     const tryNext = () => {
       attempt += 1;
-      const result = goNextLesson();
+      const result = goNextLesson({ auto: true });
       if (result.clicked) {
         navigationInProgress = false;
         setPanelMessage(result.message || "已进入下一节。");
@@ -624,53 +622,33 @@
   }
 
   function goNextLesson(options = {}) {
-    if (settings.navigationMode !== "button-only") {
-      const skipAwareTask = findNextTeacherAjaxTask();
-      if (skipAwareTask && skipAwareTask.skippedUnsafeBefore) {
-        const nativeTeacherAjax = tryTeacherAjaxNativeTask(skipAwareTask);
+    if (options.auto || settings.navigationMode !== "button-only") {
+      const orderedTask = findNextUnfinishedVideoTask({ allowWrap: true });
+      if (orderedTask) {
+        const nativeTeacherAjax = tryTeacherAjaxNativeTask(orderedTask);
         if (nativeTeacherAjax.clicked) {
-          nativeTeacherAjax.message = "已跳过章节测验，进入下一个视频任务点。";
+          nativeTeacherAjax.message = orderedTask.skippedUnsafeBefore
+            ? "已跳过章节测验，按章节顺序进入下一个未完成视频任务点。"
+            : "已按章节顺序进入下一个未完成视频任务点。";
           return announceNavigation(nativeTeacherAjax);
         }
-        clickElement(skipAwareTask.clickTarget || skipAwareTask.element);
-        return announceNavigation({ clicked: true, message: "已跳过章节测验，进入下一个视频任务点。" });
-      }
-      if (skipAwareTask && skipAwareTask.noSelectableAfterUnsafe) {
+        clickElement(orderedTask.clickTarget || orderedTask.element);
         return announceNavigation({
-          clicked: false,
-          done: true,
-          message: "全部视频任务点已完成。",
-          notifyDone: true,
+          clicked: true,
+          message: orderedTask.skippedUnsafeBefore
+            ? "已跳过章节测验，按章节顺序进入下一个未完成视频任务点。"
+            : "已按章节顺序进入下一个未完成视频任务点。",
         });
       }
-
-      if (!options.skipNativeOnce) {
-        const nativeNext = tryNativeNextStep();
-        if (nativeNext.clicked) {
-          return announceNavigation(nativeNext);
-        }
-      }
-
-      const teacherAjaxTask = findNextTeacherAjaxTask();
-      if (teacherAjaxTask && teacherAjaxTask.noSelectableAfterUnsafe) {
-        return announceNavigation({
-          clicked: false,
-          done: true,
-          message: "全部视频任务点已完成。",
-          notifyDone: true,
-        });
-      }
-      if (teacherAjaxTask) {
-        const nativeTeacherAjax = tryTeacherAjaxNativeTask(teacherAjaxTask);
-        if (nativeTeacherAjax.clicked) {
-          return announceNavigation(nativeTeacherAjax);
-        }
-        clickElement(teacherAjaxTask.clickTarget || teacherAjaxTask.element);
-        return announceNavigation({ clicked: true, message: "已按章节未完成数跳转到下一个任务点。" });
-      }
+      return announceNavigation({
+        clicked: false,
+        done: true,
+        message: "全部视频任务点已完成。",
+        notifyDone: true,
+      });
     }
 
-    if (settings.navigationMode !== "task-only") {
+    if (options.manual && settings.navigationMode !== "task-only") {
       const direct = findNextElement(document);
       if (direct) {
         clickElement(direct);
@@ -678,7 +656,7 @@
       }
     }
 
-    if (settings.navigationMode !== "button-only") {
+    if (options.manual && settings.navigationMode !== "button-only") {
       const nextTask = findNextTaskPoint();
       if (nextTask) {
         clickElement(nextTask.clickTarget || nextTask.element);
@@ -691,13 +669,13 @@
       }
     }
 
-    const direct = settings.navigationMode === "task-only" ? null : findNextElement(document);
+    const direct = options.manual && settings.navigationMode !== "task-only" ? findNextElement(document) : null;
     if (direct) {
       clickElement(direct);
       return announceNavigation({ clicked: true, message: "已点击页面上的下一节按钮。" });
     }
 
-    const frames = Array.from(document.querySelectorAll("iframe, frame"));
+    const frames = options.manual ? Array.from(document.querySelectorAll("iframe, frame")) : [];
     for (const frame of frames) {
       try {
         const doc = frame.contentDocument || frame.contentWindow.document;
@@ -722,17 +700,16 @@
       showToast(message, "success");
       logEvent(message, "success");
     } else if (result && result.notifyDone) {
-      const message = result.message || "全部视频任务点已完成。";
-      runtime.state = "已完成";
-      runtime.task = "全部视频任务点已完成";
-      notify("学习通视频助手", message);
-      showToast(message, "success");
-      logEvent(message, "success");
+      markAllVideosCompleted(result.message);
     }
     return result;
   }
 
   function findNextTeacherAjaxTask() {
+    return findNextUnfinishedVideoTask({ allowWrap: true });
+  }
+
+  function findNextUnfinishedVideoTask(options = {}) {
     const roots = getSearchRoots();
     for (const root of roots) {
       const items = getTeacherAjaxChapterInfos(root)
@@ -742,29 +719,69 @@
       }
 
       const currentIndex = findCurrentTaskIndex(items);
-      if (currentIndex >= 0 && currentIndex + 1 < items.length) {
-        const afterCurrent = items.slice(currentIndex + 1);
-        const nextSelectableIndex = afterCurrent.findIndex(isSelectableTaskItem);
-        if (nextSelectableIndex >= 0) {
-          const next = afterCurrent[nextSelectableIndex];
-          next.skippedUnsafeBefore = items[currentIndex].unsafe || afterCurrent.slice(0, nextSelectableIndex).some((item) => item.unsafe);
-          return next;
-        }
-        if (items[currentIndex].unsafe || afterCurrent.some((item) => item.unsafe)) {
-          return { clicked: false, noSelectableAfterUnsafe: true };
-        }
-      }
-
       if (currentIndex >= 0) {
-        continue;
+        const afterCurrent = items.slice(currentIndex + 1);
+        const nextAfter = firstUnfinishedVideoTask(afterCurrent);
+        if (nextAfter) {
+          nextAfter.skippedUnsafeBefore = items[currentIndex].unsafe || hasSkippedUnsafeBefore(afterCurrent, nextAfter);
+          return nextAfter;
+        }
+        if (options.allowWrap) {
+          const beforeCurrent = items.slice(0, currentIndex);
+          const wrapped = firstUnfinishedVideoTask(beforeCurrent);
+          if (wrapped) {
+            wrapped.wrappedToEarlierUnfinished = true;
+            return wrapped;
+          }
+        }
+        return null;
       }
 
-      const firstUnfinished = items.find((item) => isSelectableTaskItem(item) && item.unfinishCount > 0 && !item.current);
+      const firstUnfinished = firstUnfinishedVideoTask(items);
       if (firstUnfinished) {
         return firstUnfinished;
       }
     }
     return null;
+  }
+
+  function firstUnfinishedVideoTask(items) {
+    return items.find(isSelectableTaskItem) || null;
+  }
+
+  function hasSkippedUnsafeBefore(items, target) {
+    const index = items.indexOf(target);
+    if (index <= 0) {
+      return false;
+    }
+    return items.slice(0, index).some((item) => item.unsafe);
+  }
+
+  function getVideoTaskItems(items) {
+    return items.filter((item) => item && !item.locked && !item.unsafe && item.hasUnfinishCount);
+  }
+
+  function markAllVideosCompleted(message = "全部视频任务点已完成。") {
+    runtime.state = "已完成";
+    runtime.task = "全部视频任务点已完成";
+    setPanelMessage(message);
+    notify("学习通视频助手", message);
+    showToast(message, "success");
+    logEvent(`${message} 自动跳转已停止。`, "success");
+    settings.stoppedAfterCompletion = true;
+    saveSettings(settings);
+    broadcastSettings();
+    updatePanelRuntime();
+  }
+
+  function clearCompletionStop() {
+    if (!settings.stoppedAfterCompletion) {
+      return;
+    }
+    settings.stoppedAfterCompletion = false;
+    saveSettings(settings);
+    runtime.state = settings.enabled ? "运行中" : "已暂停";
+    logEvent("已人工恢复自动流程", "info");
   }
 
   function getTeacherAjaxChapterInfos(root) {
@@ -837,7 +854,7 @@
   }
 
   function isSelectableTaskItem(item) {
-    return Boolean(item && !item.locked && !item.unsafe && !item.finished && (item.unfinished || item.looksVideo || !item.hasUnfinishCount));
+    return Boolean(item && !item.locked && !item.unsafe && !item.finished && item.unfinished && (item.looksVideo || item.hasUnfinishCount));
   }
 
   function parseTeacherAjaxChapterId(onclick) {
@@ -1290,6 +1307,9 @@
       return;
     }
     const key = target.dataset.setting;
+    if (["enabled", "autoNext", "completionCheck"].includes(key)) {
+      settings.stoppedAfterCompletion = false;
+    }
     if (target.type === "checkbox") {
       settings[key] = target.checked;
     } else if (key === "speed") {
@@ -1320,6 +1340,7 @@
       return;
     }
     if (target.dataset.action === "toggle-enabled") {
+      clearCompletionStop();
       settings.enabled = !settings.enabled;
       saveSettings(settings);
       runtime.state = settings.enabled ? "运行中" : "已暂停";
@@ -1329,7 +1350,8 @@
       return;
     }
     if (target.dataset.action === "next-now") {
-      const result = goNextLesson();
+      clearCompletionStop();
+      const result = goNextLesson({ manual: true });
       setPanelMessage(result.message || (result.clicked ? "已尝试跳转。" : "未找到下一任务点。"));
       if (!result.clicked) {
         notify("学习通视频助手", result.message || "未找到下一任务点。");
@@ -1893,7 +1915,7 @@
       localStorage.setItem(STORE_KEY, text);
     }
     settings = normalized;
-    runtime.state = settings.enabled ? "运行中" : "已暂停";
+    runtime.state = settings.stoppedAfterCompletion ? "已完成" : settings.enabled ? "运行中" : "已暂停";
   }
 
   function normalizeSettings(value) {
@@ -1908,6 +1930,7 @@
       maxNextRetries: Math.max(1, Math.min(20, Number(value.maxNextRetries) || DEFAULT_SETTINGS.maxNextRetries)),
       retryIntervalSeconds: Math.max(0.5, Math.min(10, Number(value.retryIntervalSeconds) || DEFAULT_SETTINGS.retryIntervalSeconds)),
       completionCheck: value.completionCheck !== false,
+      stoppedAfterCompletion: value.stoppedAfterCompletion === true,
       showPanel: value.showPanel !== false,
       panelMinimized: value.panelMinimized === true,
       panelLeft: isFinitePanelCoord(value.panelLeft) ? Number(value.panelLeft) : null,

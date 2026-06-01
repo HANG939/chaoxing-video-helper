@@ -400,8 +400,8 @@ nextLink.clicked = false;
 directNextButton.clicked = false;
 sandbox.nativeNextArgs = null;
 const prioritizedNavigation = sandbox.window.__CXVH_TEST__.goNextLesson();
-if (!prioritizedNavigation.clicked || !sandbox.nativeNextArgs || nextLink.clicked || directNextButton.clicked) {
-  throw new Error(`Expected smart navigation to prefer native PCount.next before DOM clicks, got ${JSON.stringify({
+if (!prioritizedNavigation.clicked || sandbox.nativeNextArgs || !nextLink.clicked || directNextButton.clicked) {
+  throw new Error(`Expected smart navigation to prefer the ordered unfinished video task list before native next or page buttons, got ${JSON.stringify({
     prioritizedNavigation,
     nativeNextArgs: sandbox.nativeNextArgs,
     nextLinkClicked: nextLink.clicked === true,
@@ -491,6 +491,7 @@ if (!urlCurrentSkipNavigation.clicked || !videoAfterLink.clicked || nextLink.cli
 }
 
 videoAfterInput.value = "0";
+nextInput.value = "0";
 videoAfterLink.clicked = false;
 sandbox.nativeNextArgs = null;
 const doneAfterQuiz = sandbox.window.__CXVH_TEST__.goNextLesson();
@@ -502,6 +503,7 @@ if (!doneAfterQuiz.done || doneAfterQuiz.clicked || videoAfterLink.clicked || sa
   })}`);
 }
 videoAfterInput.value = "1";
+nextInput.value = "1";
 sandbox.location.href = "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=chapter-1";
 curChapterId.value = "chapter-1";
 

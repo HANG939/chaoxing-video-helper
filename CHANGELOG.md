@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6
+
+- Changed automatic navigation to use only the ordered unfinished video-task queue from the chapter catalog.
+- Stopped automatic navigation from using Chaoxing native next-step or generic next buttons, which could jump into tests or earlier content.
+- Added a persistent completed state: after all video task points are completed, the helper notifies once and stops until the user manually resumes or clicks immediate jump.
+
 ## 0.2.5
 
 - Fixed chapter-quiz skipping so the helper only continues forward after the skipped quiz instead of falling back to earlier videos.
