@@ -2,7 +2,7 @@
 // @name         Chaoxing Video Helper
 // @name:zh-CN   学习通视频助手
 // @namespace    https://github.com/HANG939/chaoxing-video-helper
-// @version      0.2.6
+// @version      0.2.7
 // @description  Auto play Chaoxing course videos, control playback speed, and move to the next lesson after the current video ends.
 // @description:zh-CN 学习通/学银在线视频播放辅助：倍速控制、自动播放、当前视频结束后自动进入下一节。
 // @author       HANG
@@ -106,6 +106,8 @@
   let completionMonitorStartedAt = 0;
   let lastCompletionKey = "";
   let lastCompletionJumpAt = 0;
+  let lastNavigationTargetKey = "";
+  let lastNavigationTargetAt = 0;
   let observer = null;
   let panelDrag = null;
   let launcherDrag = null;
@@ -625,6 +627,12 @@
     if (options.auto || settings.navigationMode !== "button-only") {
       const orderedTask = findNextUnfinishedVideoTask({ allowWrap: true });
       if (orderedTask) {
+        if (options.auto && shouldSuppressRepeatedNavigation(orderedTask)) {
+          return { clicked: true, suppressed: true, message: "已等待同一视频任务点加载，避免重复点击和页面滚动。" };
+        }
+        if (options.auto) {
+          rememberNavigationTarget(orderedTask);
+        }
         const nativeTeacherAjax = tryTeacherAjaxNativeTask(orderedTask);
         if (nativeTeacherAjax.clicked) {
           nativeTeacherAjax.message = orderedTask.skippedUnsafeBefore
@@ -632,7 +640,7 @@
             : "已按章节顺序进入下一个未完成视频任务点。";
           return announceNavigation(nativeTeacherAjax);
         }
-        clickElement(orderedTask.clickTarget || orderedTask.element);
+        clickElement(orderedTask.clickTarget || orderedTask.element, { scroll: false });
         return announceNavigation({
           clicked: true,
           message: orderedTask.skippedUnsafeBefore
@@ -651,7 +659,7 @@
     if (options.manual && settings.navigationMode !== "task-only") {
       const direct = findNextElement(document);
       if (direct) {
-        clickElement(direct);
+        clickElement(direct, { scroll: true });
         return announceNavigation({ clicked: true, message: "已点击页面上的下一节按钮。" });
       }
     }
@@ -659,7 +667,7 @@
     if (options.manual && settings.navigationMode !== "button-only") {
       const nextTask = findNextTaskPoint();
       if (nextTask) {
-        clickElement(nextTask.clickTarget || nextTask.element);
+        clickElement(nextTask.clickTarget || nextTask.element, { scroll: true });
         return announceNavigation({
           clicked: true,
           message: nextTask.unfinished
@@ -671,7 +679,7 @@
 
     const direct = options.manual && settings.navigationMode !== "task-only" ? findNextElement(document) : null;
     if (direct) {
-      clickElement(direct);
+      clickElement(direct, { scroll: true });
       return announceNavigation({ clicked: true, message: "已点击页面上的下一节按钮。" });
     }
 
@@ -681,7 +689,7 @@
         const doc = frame.contentDocument || frame.contentWindow.document;
         const element = findNextElement(doc);
         if (element) {
-          clickElement(element);
+          clickElement(element, { scroll: true });
           return announceNavigation({ clicked: true, message: "已点击框架内的下一节按钮。" });
         }
       } catch (_error) {
@@ -694,10 +702,12 @@
   function announceNavigation(result) {
     if (result && result.clicked) {
       const message = result.message || "已尝试跳转到下一个任务点。";
-      runtime.state = "跳转中";
+      runtime.state = result.suppressed ? "等待中" : "跳转中";
       runtime.task = message;
-      notify("学习通视频助手", message);
-      showToast(message, "success");
+      if (!result.suppressed) {
+        notify("学习通视频助手", message);
+        showToast(message, "success");
+      }
       logEvent(message, "success");
     } else if (result && result.notifyDone) {
       markAllVideosCompleted(result.message);
@@ -755,6 +765,23 @@
       return false;
     }
     return items.slice(0, index).some((item) => item.unsafe);
+  }
+
+  function getNavigationTargetKey(task) {
+    if (!task) {
+      return "";
+    }
+    return task.chapterId || task.text || getElementText(task.element || task.clickTarget || "");
+  }
+
+  function shouldSuppressRepeatedNavigation(task) {
+    const key = getNavigationTargetKey(task);
+    return Boolean(key && key === lastNavigationTargetKey && Date.now() - lastNavigationTargetAt < 15000);
+  }
+
+  function rememberNavigationTarget(task) {
+    lastNavigationTargetKey = getNavigationTargetKey(task);
+    lastNavigationTargetAt = Date.now();
   }
 
   function getVideoTaskItems(items) {
@@ -1181,12 +1208,12 @@
     );
     const button = candidates.find((item) => isClickable(item) && !/replay/i.test(getElementText(item)));
     if (button) {
-      clickElement(button);
+      clickElement(button, { scroll: false });
     }
   }
 
-  function clickElement(element) {
-    if (element.scrollIntoView) {
+  function clickElement(element, options = {}) {
+    if (options.scroll && element.scrollIntoView) {
       element.scrollIntoView({ block: "center", inline: "center" });
     }
     element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));

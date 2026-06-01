@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7
+
+- Disabled `scrollIntoView` for automatic playback and automatic task navigation to prevent suspicious up/down page jumping when a chapter has multiple video task points.
+- Added repeated-target suppression so automatic navigation will not repeatedly click the same video task point while the page is still loading.
+- Kept scroll behavior only for explicit manual controls such as immediate jump fallback buttons.
+
 ## 0.2.6
 
 - Changed automatic navigation to use only the ordered unfinished video-task queue from the chapter catalog.

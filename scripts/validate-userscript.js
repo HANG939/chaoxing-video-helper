@@ -156,7 +156,9 @@ class FakeElement {
     else this.attributes[name] = value;
   }
 
-  scrollIntoView() {}
+  scrollIntoView() {
+    this.scrolled = (this.scrolled || 0) + 1;
+  }
 
   dispatchEvent() {}
 
@@ -406,6 +408,19 @@ if (!prioritizedNavigation.clicked || sandbox.nativeNextArgs || !nextLink.clicke
     nativeNextArgs: sandbox.nativeNextArgs,
     nextLinkClicked: nextLink.clicked === true,
     directNextClicked: directNextButton.clicked === true,
+  })}`);
+}
+
+nextLink.clicked = false;
+nextLink.scrolled = 0;
+sandbox.nativeNextArgs = null;
+const autoOrderedNavigation = sandbox.window.__CXVH_TEST__.goNextLesson({ auto: true });
+if (!autoOrderedNavigation.clicked || sandbox.nativeNextArgs || !nextLink.clicked || nextLink.scrolled) {
+  throw new Error(`Expected automatic ordered task navigation to click without scrollIntoView, got ${JSON.stringify({
+    autoOrderedNavigation,
+    nativeNextArgs: sandbox.nativeNextArgs,
+    nextLinkClicked: nextLink.clicked === true,
+    nextLinkScrolled: nextLink.scrolled || 0,
   })}`);
 }
 

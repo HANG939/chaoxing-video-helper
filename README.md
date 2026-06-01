@@ -16,6 +16,7 @@ Chaoxing Video Helper is a userscript for Tampermonkey and ScriptCat. It helps w
 - OCS-style chapter scanning: reads `getTeacherAjax` chapter entries and unfinished task counts before using generic page scanning.
 - Chapter quiz skipping: when a chapter test/task point is encountered, the helper ignores it and continues looking for the next video/task point.
 - Completion stop: after all video task points are complete, the helper notifies once and stops automatic navigation until the user manually resumes or clicks `立即跳转`.
+- Scroll-safe automation: automatic playback and automatic task navigation do not force page scrolling, which helps avoid suspicious rapid up/down jumps on chapters with multiple videos.
 - Jump notifications: when the script attempts to move to the next task point, it shows a browser notification and an in-page toast at the top of the window.
 - Retry after video completion so delayed Chaoxing task-status updates have time to appear.
 - Floating control panel with persistent settings.
