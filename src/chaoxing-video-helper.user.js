@@ -102,6 +102,7 @@
   let lastVideo = null;
   let endedAt = 0;
   let statusTimer = 0;
+  let mutationDebounce = 0;
   let navigationInProgress = false;
   let completionMonitorStartedAt = 0;
   let lastCompletionKey = "";
@@ -226,7 +227,11 @@
     window.setInterval(reportVideoStatus, 1500);
 
     observer = new MutationObserver(() => {
-      applySettingsToVideo();
+      if (mutationDebounce) return;
+      mutationDebounce = window.setTimeout(() => {
+        mutationDebounce = 0;
+        applySettingsToVideo();
+      }, 250);
     });
     observer.observe(document.documentElement || document.body, {
       subtree: true,
@@ -672,12 +677,6 @@
       }
     }
 
-    const direct = options.manual && settings.navigationMode !== "task-only" ? findNextElement(document) : null;
-    if (direct) {
-      clickElement(direct, { scroll: true });
-      return announceNavigation({ clicked: true, message: "已点击页面上的下一节按钮。" });
-    }
-
     const frames = options.manual ? Array.from(document.querySelectorAll("iframe, frame")) : [];
     for (const frame of frames) {
       try {
@@ -877,10 +876,6 @@
 
   function isSelectableTaskItem(item) {
     return Boolean(item && !item.locked && !item.unsafe && !item.finished && item.unfinished && (item.looksVideo || item.hasUnfinishCount));
-  }
-
-  function parseTeacherAjaxChapterId(onclick) {
-    return parseTeacherAjaxArgs(onclick)[2] || "";
   }
 
   function parseTeacherAjaxArgs(onclick) {
@@ -1186,25 +1181,6 @@
       return false;
     }
     return true;
-  }
-
-  function clickVisiblePlayButton() {
-    const candidates = Array.from(
-      document.querySelectorAll(
-        [
-          ".vjs-big-play-button",
-          ".xgplayer-start",
-          ".prism-big-play-btn",
-          ".playButton",
-          ".playbtn",
-          "[class*='play']",
-        ].join(",")
-      )
-    );
-    const button = candidates.find((item) => isClickable(item) && !/replay/i.test(getElementText(item)));
-    if (button) {
-      clickElement(button, { scroll: false });
-    }
   }
 
   function clickElement(element, options = {}) {
@@ -1652,22 +1628,22 @@
     if (!panel) {
       return;
     }
-    const values = {
+    const roleMap = {
       "run-state": runtime.state,
       "media-state": runtime.media,
       "task-state": runtime.task,
       "last-message": runtime.lastMessage,
       logs: renderLogHtml(),
     };
-    for (const [role, value] of Object.entries(values)) {
-      const node = panel.querySelector(`[data-role='${role}']`);
-      if (!node) {
+    for (const node of panel.querySelectorAll("[data-role]")) {
+      const role = node.dataset.role;
+      if (!(role in roleMap)) {
         continue;
       }
       if (role === "logs") {
-        node.innerHTML = value;
+        node.innerHTML = roleMap[role];
       } else {
-        node.textContent = value;
+        node.textContent = roleMap[role];
       }
     }
   }
@@ -2011,7 +1987,7 @@
   }
 
   function getElementMeta(element) {
-    const attrs = ["id", "class", "className", "title", "aria-label", "href", "onclick", "value"];
+    const attrs = ["id", "className", "title", "aria-label", "href", "onclick", "value"];
     const own = attrs.map((name) => {
       if (name === "className") {
         return element.className || "";
